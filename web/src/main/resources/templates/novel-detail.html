@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${novel.title} + ' — 小說語音合成系統'">小說</title>
+  <meta name="_csrf_token" th:content="${_csrf.token}">
+  <meta name="_novel_id" th:content="${novel.id}">
+  <meta name="_csrf_header" content="X-CSRF-TOKEN">
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">小說語音合成</span>
+  <nav>
+    <a th:href="@{/}" href="/">儀表板</a>
+    <a th:href="@{/novels}" href="/novels">小說</a>
+    <a th:href="@{/settings}" href="/settings">設定</a>
+    <a th:href="@{/account/password}" href="/account/password">帳號</a>
+  </nav>
+  <span class="spacer"></span>
+  <form method="post" th:action="@{/do-logout}">
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+    <button class="btn btn-sm" type="submit">登出</button>
+  </form>
+</header>
+<main>
+  <h1 th:text="${novel.title}"></h1>
+  <p class="muted">
+    <span th:text="${novel.author} ?: '未指定作者'"></span> ·
+    <span class="badge" th:classappend="${novel.status}" th:text="${novel.status}"></span> ·
+    <span th:text="${novel.totalChapters} + ' 章 / ' + ${novel.totalChars} + ' 字'"></span>
+  </p>
+
+  <div class="panel">
+    <button class="btn btn-primary" id="analyzeBtn">觸發 AI 分析</button>
+    <button class="btn" id="synthesizeBtn">觸發語音合成</button>
+    <button class="btn" id="mergeBtn">合併整本</button>
+    <a class="btn" th:href="@{/api/novels/{id}/export(id=${novel.id})}">下載 ZIP</a>
+    <a class="btn" th:href="@{/novels/{id}/characters(id=${novel.id})}">角色音色</a>
+    <a class="btn" th:href="@{/novels/{id}/segments(id=${novel.id})}">段落與音檔</a>
+    <div id="jobBox" style="margin-top:12px"></div>
+  </div>
+
+  <h2>章節</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>#</th><th>標題</th><th>字數</th><th>段落數</th><th>狀態</th><th></th></tr></thead>
+      <tbody>
+      <tr th:each="ch : ${chapters}">
+        <td th:text="${ch.chapterIndex}"></td>
+        <td th:text="${ch.displayTitle}"></td>
+        <td th:text="${ch.charCount}"></td>
+        <td class="seg-count" th:attr="data-chapter-id=${ch.id}">-</td>
+        <td><span class="badge" th:classappend="${ch.status}" th:text="${ch.status}"></span></td>
+        <td><a class="btn btn-sm" th:href="@{/novels/{id}/segments(id=${novel.id},chapterId=${ch.id})}">查看段落</a></td>
+      </tr>
+      <tr th:if="${#lists.isEmpty(chapters)}"><td colspan="6" class="muted">尚未切分章節</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>音檔</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>類型</th><th>檔名</th><th>時長</th><th>大小</th><th>音色</th><th>播放</th></tr></thead>
+      <tbody>
+      <tr th:each="a : ${audios}">
+        <td th:text="${a.kind}"></td>
+        <td th:text="${a.fileName}"></td>
+        <td th:text="${a.durationMs != null ? (a.durationMs / 1000) + ' 秒' : '-'}"></td>
+        <td th:text="${a.byteSize != null ? (a.byteSize / 1024) + ' KB' : '-'}"></td>
+        <td th:text="${a.voiceId} ?: '-'"></td>
+        <td><audio controls th:src="@{/api/audio/{id}/file(id=${a.id})}"></audio></td>
+      </tr>
+      <tr th:if="${#lists.isEmpty(audios)}"><td colspan="6" class="muted">尚無音檔</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/novel-detail.js}"></script>
+</body>
+</html>

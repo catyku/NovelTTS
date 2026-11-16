@@ -1,0 +1,80 @@
+# 本機開發用 PostgreSQL + 應用程式。
+# 本機沒有 Docker daemon，統一用 podman-compose（語法相容）：
+#   cd WebEnv && podman-compose up -d
+# 搬到有 Docker 的環境可直接：
+#   cd WebEnv && docker compose up -d
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: noveltts-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-noveltts}"
+      POSTGRES_USER: "${POSTGRES_USER:-noveltts}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?請在 .env 設定 POSTGRES_PASSWORD（勿用範例值）}"
+      TZ: "${TZ:-Asia/Taipei}"
+    # 只綁 loopback，不對外暴露
+    ports:
+      - "127.0.0.1:${POSTGRES_EXPOSE_PORT:-5432}:5432"
+    volumes:
+      - noveltts_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-noveltts} -d ${POSTGRES_DB:-noveltts}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  app:
+    # 含 ffmpeg/ffprobe 的自建映像（TTS 回傳 PCM，必須轉 MP3）。
+    # 建置：podman build -t noveltts-app:local -f Dockerfile .
+    image: "${APP_IMAGE:-localhost/noveltts-app:local}"
+    container_name: noveltts-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /app
+    # 音檔輸出。用 named volume：host bind mount 的目錄權限由宿主機決定，
+    # 容器內的非 root 使用者會寫不進去。named volume 由映像建立時的 user 擁有。
+    volumes:
+      - noveltts_storage:/app/storage
+    environment:
+      SERVER_PORT: "8090"
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      DB_NAME: "${POSTGRES_DB:-noveltts}"
+      DB_USER: "${POSTGRES_USER:-noveltts}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD:?請在 .env 設定 POSTGRES_PASSWORD}"
+      NOVELTTS_MASTER_KEY: "${NOVELTTS_MASTER_KEY:?請在 .env 設定 NOVELTTS_MASTER_KEY（openssl rand -base64 32）}"
+      NOVELTTS_STORAGE_ROOT: "/app/storage"
+      TZ: "${TZ:-Asia/Taipei}"
+    command: ["java", "-jar", "/app/web.jar"]
+    ports:
+      - "127.0.0.1:${APP_EXPOSE_PORT:-8090}:8090"
+    healthcheck:
+      # 用 Java 實作（tools/HealthCheck.java，打 actuator health endpoint）。
+      # 不可用 /dev/tcp：那是 bash 專屬語法，而 healthcheck 預設用 sh。
+      test: ["CMD-SHELL", "java -cp /opt/healthcheck HealthCheck"]
+      interval: 15s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  noveltts_storage:
+    name: noveltts_storage
+
+  noveltts_pgdata:
+    # 明確指定名稱，避免 podman-compose 加上專案名前綴（webenv_）造成資料分散
+    name: noveltts_pgdata

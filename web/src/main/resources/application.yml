@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: novel-tts
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5432}/${DB_NAME:noveltts}
+    username: ${DB_USER:noveltts}
+    password: ${DB_PASSWORD:noveltts_dev_pwd}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: Asia/Taipei
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  thymeleaf:
+    cache: false
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+
+server:
+  port: ${SERVER_PORT:8090}
+  # 已於 SecurityConfig 明確註冊 ForwardedHeaderFilter 並指定最高優先序，
+  # 因此容器原生處理設為 none，避免兩邊重複處理 forwarded 標頭。
+  forwarded-headers-strategy: none
+  # Spring Boot 4 的 session cookie 設定在此路徑（不是 spring.servlet.session.*）。
+  # 經 Cloudflare Tunnel 對外服務時是 https，session cookie 應帶 secure 旗標。
+  # 本機以 http 直連時可設 SERVER_SESSION_COOKIE_SECURE=false。
+  servlet:
+    session:
+      cookie:
+        secure: ${SERVER_SESSION_COOKIE_SECURE:true}
+        same-site: lax
+        http-only: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+noveltts:
+  master-key: ${NOVELTTS_MASTER_KEY:}
+  storage-root: ${NOVELTTS_STORAGE_ROOT:./storage}
+  chapter-max-chars: ${NOVELTTS_CHAPTER_MAX_CHARS:3000}
+  tts-concurrency: ${NOVELTTS_TTS_CONCURRENCY:3}
+  tts-group-max-chars: ${NOVELTTS_TTS_GROUP_MAX_CHARS:3000}
+  global-instructions: ${NOVELTTS_GLOBAL_INSTRUCTIONS:小說有聲書風格，發音清晰自然}
+  narrator-voice-id: ${NOVELTTS_NARRATOR_VOICE:Kore}
+  default-voice-id: ${NOVELTTS_DEFAULT_VOICE:Kore}
+  auto-assign-voice: ${NOVELTTS_AUTO_ASSIGN_VOICE:true}
+  audio-sample-rate: 24000
+
+logging:
+  level:
+    root: INFO
+    com.noveltts: DEBUG
