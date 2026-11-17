@@ -277,7 +277,8 @@ db/migration/V1__init_schema.sql
 
 ## 對外服務（Cloudflare Tunnel）
 
-已建立 named tunnel `noveltts`，對外網址：
+用 Cloudflare named tunnel 對外服務。對外網址由你在 Cloudflare 後台指定，
+本專案不綁定特定網域，以下範例以 `<your-domain>` 表示。
 
 ```
 https://<your-domain>
@@ -313,13 +314,17 @@ ERR failed to accept incoming stream requests
 映射到 host 的 eric）。
 
 ```bash
+# 以自己的 home 目錄替換 $HOME
 podman run --rm --network host --user 0:0 --name cf-noveltts \
   -v $HOME/.cloudflared:$HOME/.cloudflared:ro \
-  -e HOME=/home/eric \
+  -e HOME=$HOME \
   -e TUNNEL_ORIGIN_CERT=$HOME/.cloudflared/cert.pem \
   docker.io/cloudflare/cloudflared:2026.11.0 tunnel \
-  --config $HOME/.cloudflared/config-noveltts.yml --no-autoupdate run noveltts
+  --config $HOME/.cloudflared/config-noveltts.yml --no-autoupdate run <tunnel-name>
 ```
+
+> 路徑與 tunnel 名稱請換成你自己的。`<tunnel-name>` 為你在
+> `cloudflared tunnel create` 時指定的名稱。
 
 `--network host` 是必要的：容器內的 `localhost` 指的是容器自己而非 host，
 用 bridge 網路時 origin 必須改用 `host.containers.internal`。
@@ -327,8 +332,9 @@ podman run --rm --network host --user 0:0 --name cf-noveltts \
 設定檔 `~/.cloudflared/config-noveltts.yml`：
 
 ```yaml
+# tunnel 與 credentials 檔名由 Cloudflare 產生，請填你自己的
 tunnel: <tunnel-uuid>
-credentials-file: $HOME/.cloudflared/<tunnel-uuid>.json
+credentials-file: <home>/.cloudflared/<tunnel-uuid>.json
 
 ingress:
   - hostname: <your-domain>
