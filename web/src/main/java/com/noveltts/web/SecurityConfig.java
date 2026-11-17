@@ -40,7 +40,7 @@ public class SecurityConfig {
             String username = authentication.getName();
             accountService.recordLogin(username);
             if (accountService.mustChangePassword(username)) {
-                response.sendRedirect(request.getContextPath() + "/account/password?required");
+                response.sendRedirect(request.getContextPath() + "/do-change-password");
                 return;
             }
             new org.springframework.security.web.DefaultRedirectStrategy()

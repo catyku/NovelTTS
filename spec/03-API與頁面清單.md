@@ -15,12 +15,17 @@ Base URL：`http://localhost:8090`（8080 已被本機 nextcloud 容器占用）
 | GET | `/login` | 登入頁 | — | HTML |
 | POST | `/do-login` | 表單登入（需 CSRF token） | `username`,`password` | 302 |
 | POST | `/do-logout` | 登出 | — | 302 |
-| GET | `/account/password` | 變更密碼頁 | — | HTML |
-| POST | `/do-change-password` | 變更密碼 | `currentPassword`,`newPassword`,`confirmPassword` | HTML |
+| GET | `/do-change-password` | 變更密碼頁 | — | HTML |
+| POST | `/do-change-password` | 提交密碼變更 | `currentPassword`,`newPassword`,`confirmPassword` | HTML |
 
 > 帳號改由資料庫管理（`app_user` 表，BCrypt 雜湊），不再使用設定檔中的明文密碼。
-> 首次登入時 `must_change_password = true` 會強制導向 `/account/password`，
+> 首次登入時 `must_change_password = true` 會強制導向 `/do-change-password`，
 > 變更前無法存取其他頁面（`MustChangePasswordFilter` 攔截所有路徑）。
+>
+> 顯示表單（GET）與提交變更（POST）**共用同一路徑** `/do-change-password`，
+> 不另設獨立的頁面 URL，也不帶 query 參數 ——
+> 「必須變更」的狀態一律由 `app_user.must_change_password` 判斷，
+> 因此直接開啟此頁與被導向此頁的行為一致。
 > 新密碼至少 8 個字元，且不可與目前密碼相同。
 
 ### 1.2 Provider / 模型 / 音色設定
@@ -197,7 +202,7 @@ Base URL：`http://localhost:8090`（8080 已被本機 nextcloud 容器占用）
 | `/novels/{id}/characters` | 角色音色 | 角色卡片、下拉選音色、語氣指令輸入、色碼、自動指派 |
 | `/novels/{id}/segments?chapterId=` | 段落與音檔 | 章節切換、段落表格（文字/角色/音色/狀態）、單段重跑、播放、下載 |
 | `/settings` | 設定 | Provider 表單、模型設定（分析/TTS，含備援模型）、音色庫管理、一般設定 |
-| `/account/password` | 變更密碼 | 目前密碼、新密碼、確認新密碼 |
+| `/do-change-password` | 變更密碼 | 目前密碼、新密碼、確認新密碼 |
 
 ### 2.1 頁面交互要點
 - 音色下拉選項由 `/api/settings/voices` 動態取得（**不可**在 HTML 寫死 `<option>`，

@@ -25,7 +25,6 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
 
     /** 變更密碼頁與相關端點，不受此限制。 */
     private static final String[] ALLOWED_PATHS = {
-            "/account/password",
             "/do-change-password",
             "/do-logout",
             "/css/**",
@@ -52,7 +51,7 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
                 && !"anonymousUser".equals(auth.getName())
                 && !isAllowed(request)) {
             if (accountService.mustChangePassword(auth.getName())) {
-                response.sendRedirect(request.getContextPath() + "/account/password?required");
+                response.sendRedirect(request.getContextPath() + "/do-change-password");
                 return;
             }
         }

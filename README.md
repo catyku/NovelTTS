@@ -271,7 +271,8 @@ ingress:
 - 初始帳號：`admin` / `admin`（V4 migration 種子資料）
 - `must_change_password = true`，因此**首次登入會被強制導向變更密碼頁**，
   變更前無法存取其他頁面
-- 變更密碼頁：`/account/password`，也可從各頁右上角「帳號」進入
+- 變更密碼頁：`/do-change-password`（GET 顯示表單、POST 提交都用這一個路徑），
+  也可從各頁右上角「帳號」進入
 - 新密碼至少 8 個字元，且不可與目前密碼相同
 - `NOVELTTS_ADMIN_USERNAME` / `NOVELTTS_ADMIN_PASSWORD` 環境變數已移除
 

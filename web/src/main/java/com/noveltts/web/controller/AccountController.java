@@ -11,7 +11,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * 帳號密碼管理。
  *
- * 變更成功後清除 session 內的「需變更密碼」狀態，讓使用者可繼續操作。
+ * 單一路徑 {@code /do-change-password} 同時負責顯示表單（GET）與提交變更（POST），
+ * 避免顯示頁與 action 分成兩個 URL 造成使用者困惑。
+ *
+ * 「必須變更密碼」的狀態一律從資料庫判斷，不使用 query 參數，
+ * 因此直接開啟此頁與被導向此頁的行為一致。
  */
 @Controller
 public class AccountController {
@@ -22,7 +26,8 @@ public class AccountController {
         this.accountService = accountService;
     }
 
-    @GetMapping("/account/password")
+    /** 顯示變更密碼表單。 */
+    @GetMapping("/do-change-password")
     public String passwordPage(Authentication authentication, Model model) {
         String username = authentication != null ? authentication.getName() : "";
         // 直接開此頁時也要顯示「必須變更」提示，不依賴 query 參數。
@@ -32,6 +37,7 @@ public class AccountController {
         return "account-password";
     }
 
+    /** 提交密碼變更。 */
     @PostMapping("/do-change-password")
     public String changePassword(Authentication authentication,
                                  @RequestParam("currentPassword") String currentPassword,
@@ -41,12 +47,12 @@ public class AccountController {
         String username = authentication != null ? authentication.getName() : null;
 
         if (!newPassword.equals(confirmPassword)) {
-            return fail(model, username, "兩次輸入的新密碼不一致", true);
+            return fail(model, username, "兩次輸入的新密碼不一致");
         }
 
         String error = accountService.changePassword(username, currentPassword, newPassword);
         if (error != null) {
-            return fail(model, username, error, true);
+            return fail(model, username, error);
         }
 
         model.addAttribute("success", "密碼已更新");
@@ -55,10 +61,12 @@ public class AccountController {
         return "account-password";
     }
 
-    private String fail(Model model, String username, String error, boolean required) {
+    private String fail(Model model, String username, String error) {
         model.addAttribute("error", error);
         model.addAttribute("username", username);
-        model.addAttribute("required", required);
+        // 失敗時仍依資料庫判定，避免已改完密碼後重送舊表單誤導。
+        model.addAttribute("required",
+                username != null && accountService.mustChangePassword(username));
         return "account-password";
     }
 }
