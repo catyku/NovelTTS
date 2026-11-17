@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -34,6 +35,18 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
             "/error"
     };
 
+    /**
+     * 路徑比對器。
+     *
+     * 必須用 AntPathMatcher 而非 String.startsWith —— 白名單裡的 {@code /css/**}
+     * 是 Ant 樣式，不是字面前綴。用 startsWith 比對時 {@code /css/app.css}
+     * 不會 startsWith {@code /css/**}，靜態資源會被擋下並 302 到變更密碼頁，
+     * 瀏覽器拿到 HTML 當成樣式表，頁面就變成無樣式的原始排版。
+     *
+     * 與 SecurityConfig 的 requestMatchers 使用同一套語法，兩邊才會一致。
+     */
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
     private final AccountService accountService;
 
     public MustChangePasswordFilter(AccountService accountService) {
@@ -58,14 +71,15 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private boolean isAllowed(HttpServletRequest request) {
+    /** package-private 供測試驗證白名單比對語法。 */
+    boolean isAllowed(HttpServletRequest request) {
         String path = request.getRequestURI();
         String context = request.getContextPath();
         if (context != null && !context.isEmpty() && path.startsWith(context)) {
             path = path.substring(context.length());
         }
         for (String allowed : ALLOWED_PATHS) {
-            if (path.equals(allowed) || path.startsWith(allowed)) {
+            if (PATH_MATCHER.match(allowed, path)) {
                 return true;
             }
         }
