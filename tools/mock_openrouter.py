@@ -163,13 +163,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_speech(self, body):
         """回傳 raw PCM。"""
-        turns = body.get("input") or []
-        if not turns:
+        raw_input = body.get("input")
+        if not raw_input:
             self._json(400, {"error": "input empty"})
             return
-        # multi-speaker：把所有 turn 的文字接起來產生 PCM
-        text = "".join(t.get("text", "") for t in turns)
-        voice = turns[0].get("voice", "Kore")
+
+        # input 有兩種形狀（與 OpenRouter 實際契約一致）：
+        #   1. 陣列：multi-speaker，每個 turn 是 {"type":"text","text":...,"voice":...}
+        #   2. 字串：單一語音，音色由頂層 voice 指定
+        # 陣列內所有 voice 相同時，呼叫端會退回字串 + 頂層 voice。
+        if isinstance(raw_input, str):
+            text = raw_input
+            voice = body.get("voice", "Kore")
+        else:
+            turns = raw_input
+            # multi-speaker：把所有 turn 的文字接起來產生 PCM
+            text = "".join(t.get("text", "") for t in turns if isinstance(t, dict))
+            voice = turns[0].get("voice", "Kore") if turns and isinstance(turns[0], dict) else "Kore"
+
         pcm, dur_ms = make_pcm(text, voice)
 
         self.send_response(200)

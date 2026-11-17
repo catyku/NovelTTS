@@ -1,4 +1,17 @@
 /* 小說列表 */
+
+/* 群組下拉：供匯入時指定所屬群組 */
+async function loadGroupOptions() {
+  const select = document.getElementById('groupId');
+  if (!select) return;
+  const groups = await api('/api/groups');
+  select.innerHTML = '';
+  select.appendChild(el('option', { value: '', text: '（獨立小說）' }));
+  for (const g of groups) {
+    select.appendChild(el('option', { value: String(g.id), text: g.title }));
+  }
+}
+
 async function loadNovels() {
   const tbody = document.getElementById('novelRows');
   tbody.innerHTML = '';
@@ -9,7 +22,9 @@ async function loadNovels() {
   }
   for (const n of novels) {
     tbody.appendChild(el('tr', {},
-      el('td', {}, el('a', { href: '/novels/' + n.id, text: n.title })),
+      el('td', {}, el('a', { href: '/novels/' + n.id, text: n.title }),
+        n.groupTitle ? el('div', { class: 'muted', text: n.groupTitle +
+          (n.groupOrder ? '（第 ' + n.groupOrder + ' 集）' : '') }) : null),
       el('td', { text: n.author || '-' }),
       el('td', {}, el('span', { class: 'badge ' + n.status, text: n.status })),
       el('td', { text: String(n.totalChapters) }),
@@ -38,20 +53,30 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   const author = document.getElementById('author').value.trim();
   const content = document.getElementById('content').value;
   if (!content.trim()) { msg.textContent = '請貼上小說內容'; return; }
+  const groupVal = document.getElementById('groupId').value;
+  const orderVal = document.getElementById('groupOrder').value;
   msg.textContent = '建立中…';
   try {
     const novel = await api('/api/novels', {
       method: 'POST',
-      body: JSON.stringify({ title: title || '未命名小說', author: author, content: content })
+      body: JSON.stringify({
+        title: title || '未命名小說',
+        author: author,
+        content: content,
+        groupId: groupVal ? parseInt(groupVal, 10) : null,
+        groupOrder: orderVal ? parseInt(orderVal, 10) : null
+      })
     });
     msg.textContent = '已建立，共 ' + novel.totalChapters + ' 章';
     document.getElementById('content').value = '';
     document.getElementById('title').value = '';
     document.getElementById('author').value = '';
+    document.getElementById('groupOrder').value = '';
     loadNovels();
   } catch (e) {
     msg.textContent = '失敗: ' + e.message;
   }
 });
 
+loadGroupOptions();
 loadNovels();

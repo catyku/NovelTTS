@@ -23,6 +23,17 @@ import java.util.Objects;
 @Component
 public class TtsGroupBuilder {
 
+    /**
+     * 群組層級的旁白覆寫。
+     *
+     * 同一本連載小說的各集必須用同一個旁白音色，否則聽眾會以為換了本書。
+     */
+    public record GroupContext(String narratorVoiceId, String narratorInstructions) {
+        public static GroupContext none() {
+            return new GroupContext(null, null);
+        }
+    }
+
     private final NovelTtsProperties properties;
 
     public TtsGroupBuilder(NovelTtsProperties properties) {
@@ -30,16 +41,29 @@ public class TtsGroupBuilder {
     }
 
     public List<TtsGroup> build(List<DialogueSegment> segments) {
+        return build(segments, GroupContext.none());
+    }
+
+    /**
+     * 建立 TTS 分組。
+     *
+     * @param groupContext 群組層級的旁白覆寫；null 或空白欄位表示沿用全域設定
+     */
+    public List<TtsGroup> build(List<DialogueSegment> segments, GroupContext groupContext) {
         List<TtsGroup> groups = new ArrayList<>();
         if (segments == null || segments.isEmpty()) {
             return groups;
         }
 
+        if (groupContext == null) {
+            groupContext = GroupContext.none();
+        }
+
         // 1. 切 turn
         List<TurnDraft> drafts = new ArrayList<>();
         for (DialogueSegment s : segments) {
-            String voice = resolveVoice(s);
-            String instructions = resolveInstructions(s);
+            String voice = resolveVoice(s, groupContext);
+            String instructions = resolveInstructions(s, groupContext);
             String speaker = resolveSpeaker(s);
             if (!drafts.isEmpty()) {
                 TurnDraft last = drafts.get(drafts.size() - 1);
@@ -101,11 +125,16 @@ public class TtsGroupBuilder {
         return "S:" + Objects.toString(segment.getSpeakerName(), "");
     }
 
-    private String resolveVoice(DialogueSegment segment) {
+    private String resolveVoice(DialogueSegment segment, GroupContext groupContext) {
         if (segment.getVoiceId() != null && !segment.getVoiceId().isBlank()) {
             return segment.getVoiceId();
         }
         if (segment.getType() == SegmentType.NARRATION) {
+            // 群組的旁白音色優先於全域設定（跨集一致）。
+            if (groupContext.narratorVoiceId() != null
+                    && !groupContext.narratorVoiceId().isBlank()) {
+                return groupContext.narratorVoiceId();
+            }
             return properties.getNarratorVoiceId();
         }
         NovelCharacter character = segment.getCharacter();
@@ -115,7 +144,7 @@ public class TtsGroupBuilder {
         return properties.getDefaultVoiceId();
     }
 
-    private String resolveInstructions(DialogueSegment segment) {
+    private String resolveInstructions(DialogueSegment segment, GroupContext groupContext) {
         List<String> parts = new ArrayList<>();
         NovelCharacter character = segment.getCharacter();
         if (character != null && character.getTtsInstructions() != null
@@ -124,6 +153,12 @@ public class TtsGroupBuilder {
         }
         if (segment.getInstructions() != null && !segment.getInstructions().isBlank()) {
             parts.add(segment.getInstructions().strip());
+        }
+        // 旁白的群組語氣：讓跨集旁白不僅音色相同，語氣也一致。
+        if (segment.getType() == SegmentType.NARRATION
+                && groupContext.narratorInstructions() != null
+                && !groupContext.narratorInstructions().isBlank()) {
+            parts.add(groupContext.narratorInstructions().strip());
         }
         return String.join("，", parts);
     }

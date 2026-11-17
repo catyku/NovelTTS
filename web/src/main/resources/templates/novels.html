@@ -14,6 +14,7 @@
   <nav>
     <a th:href="@{/}" href="/">儀表板</a>
     <a th:href="@{/novels}" href="/novels">小說</a>
+    <a th:href="@{/groups}" href="/groups">群組</a>
     <a th:href="@{/settings}" href="/settings">設定</a>
     <a th:href="@{/do-change-password}" href="/do-change-password">帳號</a>
   </nav>
@@ -32,6 +33,20 @@
       <label>標題<input type="text" id="title" placeholder="小說標題"></label>
       <label>作者<input type="text" id="author" placeholder="作者（可留空）"></label>
     </div>
+    <div class="row">
+      <label>所屬群組
+        <select id="groupId">
+          <option value="">（獨立小說）</option>
+        </select>
+      </label>
+      <label>集數順序
+        <input type="number" id="groupOrder" min="1" placeholder="留空則自動接續">
+      </label>
+    </div>
+    <p class="muted">
+      同一本連載小說請選同一個群組：群組的共用角色與旁白音色會自動套用到每一集，
+      確保跨集音色一致。
+    </p>
     <label>內文
       <textarea id="content" placeholder="貼上小說全文。系統會自動依「第一章」「Chapter 1」等標題切分章節。"></textarea>
     </label>
@@ -47,7 +62,6 @@
   </div>
 </main>
 
-<script th:src="@{/js/common.js}"></script>
 <script th:src="@{/js/common.js}"></script>
 <script th:src="@{/js/novels.js}"></script>
 </body>

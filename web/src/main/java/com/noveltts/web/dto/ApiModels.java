@@ -29,11 +29,27 @@ public final class ApiModels {
     }
 
     public record NovelDto(Long id, String title, String author, String status,
-                           int totalChapters, int totalChars, OffsetDateTime createdAt) {
+                           int totalChapters, int totalChars, OffsetDateTime createdAt,
+                           Long groupId, String groupTitle, Integer groupOrder) {
     }
 
     public record ChapterDto(Long id, Long novelId, int chapterIndex, String title,
                              int charCount, String status, int segmentCount) {
+    }
+
+    /** 小說群組。 */
+    public record GroupDto(Long id, String title, String author, String description,
+                           Long narratorVoiceId, String narratorVoice, String narratorInstructions,
+                           Integer ttsGroupMaxChars, String status,
+                           int novelCount, int characterCount,
+                           OffsetDateTime createdAt) {
+    }
+
+    /** 群組共用角色。 */
+    public record GroupCharacterDto(Long id, Long groupId, String name, String[] aliases,
+                                    String gender, String ageGroup, String personality,
+                                    String description, Long ttsVoiceId, String voiceId,
+                                    String ttsInstructions, String colorHex) {
     }
 
     public record CharacterDto(Long id, Long novelId, String name, String[] aliases,

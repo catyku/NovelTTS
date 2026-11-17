@@ -3,6 +3,42 @@
 小說 AI 分析 + TTS 語音合成系統。輸入小說純文字，AI 分解成「角色 × 段落」，
 再呼叫 OpenRouter 的 TTS 模型逐段發聲，輸出每段音檔、章節合併檔與整本 ZIP。
 
+![儀表板](docs/screenshots/dashboard.png)
+
+## 這系統在做什麼
+
+```
+小說純文字
+   ↓  AI 分析（chat/completions）
+切章 → 逐段判定「旁白 / 哪個角色說話」→ 抽出情緒與語氣
+   ↓  音色指派（群組共用音色優先，否則手動指定）
+每個角色固定一個 voice_id + TTS 語氣指令
+   ↓  TTS 合成（audio/speech，multi-speaker 一次請求多 turn）
+段落音檔 → 章節合併 → 整本合併 → ZIP 匯出
+```
+
+### 小說群組：讓音色跨集一致
+
+同一本連載小說常常分好幾十集慢慢出版。每一集單獨分析會得到不同的角色音色，
+聽起來像換了配音員。**群組**（`/groups`）解決這件事：
+
+- 群組層級維護共用角色（名稱、別名、音色、語氣）與群組旁白音色
+- 各集分析時自動比對名稱與別名，命中就套用群組的音色與語氣指令
+- 各集仍保留自己的章節、段落與本集特有角色 metadata
+
+實測同一角色跨集音色一致：
+
+| 集數 | 角色 | 套用音色 | 套用語氣 |
+|---|---|---|---|
+| 燈火重亮 第一集 | 林晚 | Aoede | 語氣清冷，語速偏慢 |
+| 燈火重亮 第一集 | 陳硯 | Charon | 語氣低沉，話少，帶點冷幽默 |
+| 燈火重亮 第二集 | 陳硯 | Charon | 語氣低沉，話少，帶點冷幽默 |
+
+> 語氣指令的影響實測（同一 voice ID，量測音量與時長的變異率）：
+> 無 instructions 時音量變異 9.3%、時長變異 6.2%；
+> 有 instructions 時音量變異降到 1.2%、時長變異 4.7% —— 約 3.5 倍改善。
+> 語氣指令是跨集音色一致性的關鍵，不是裝飾。
+
 ## 技術棧
 
 | 項目 | 版本／選擇 |
@@ -25,6 +61,25 @@
 | [spec/01-資料庫schema.md](spec/01-資料庫schema.md) | 完整 DDL、欄位語意、索引 |
 | [spec/02-AI-Prompt契約.md](spec/02-AI-Prompt契約.md) | Prompt 全文、JSON schema、TTS 請求格式、分組策略 |
 | [spec/03-API與頁面清單.md](spec/03-API與頁面清單.md) | REST API、頁面、設定鍵 |
+
+## 實際部署
+
+正式部署用另一套 compose（與開發版資料、容器、volume 完全隔離）：
+
+```bash
+cd WebEnv
+cp .env.example.prod .env.prod
+# 填入 POSTGRES_PASSWORD 與 NOVELTTS_MASTER_KEY
+podman-compose -f docker-compose.prod.yaml --env-file .env.prod up -d
+```
+
+> ⚠️ 必須用 `-f` 指定檔名。`podman-compose` 會把目錄下所有存在的 compose 檔
+> 依序合併，不指定就會把開發版與部署版的設定混在一起。
+
+部署版的差異：密碼強制必填（無預設值）、根檔案系統唯讀、`no-new-privileges`、
+資源調校、log 輪轉加大。
+
+完整步驟、首次設定流程與疑難排解見 **[WebEnv/DEPLOY.md](WebEnv/DEPLOY.md)**。
 
 ## 本機環境
 
@@ -104,13 +159,54 @@ mvn -pl web spring-boot:run
 
 ### 介面截圖
 
-| 頁面 | 截圖 |
-|---|---|
-| 儀表板 | `docs/screenshots/dashboard.png` |
-| 小說列表 | `docs/screenshots/novels.png` |
-| 小說詳情 | `docs/screenshots/novel-detail.png` |
-| 段落與音檔 | `docs/screenshots/segments.png` |
-| 設定 | `docs/screenshots/settings.png` |
+以下截圖取自實際部署環境，資料由真實 OpenRouter（`google/gemini-3-flash-preview` +
+`google/gemini-3.8-flash-tts`）產生，非 mock。
+
+#### 儀表板
+
+作業進度、音檔數量與最近執行紀錄。
+
+![儀表板](docs/screenshots/dashboard.png)
+
+#### 小說列表
+
+匯入時可指定所屬群組與集數順序；列表會標示每集屬於哪個群組。
+
+![小說列表](docs/screenshots/novels.png)
+
+#### 小說詳情
+
+章節狀態、各類音檔（段落 / 章節 / 整本）的時長與大小，可直接試聽。
+
+![小說詳情](docs/screenshots/novel-detail.png)
+
+#### 小說群組
+
+群組維護跨集共用的角色音色與旁白音色。
+
+![小說群組](docs/screenshots/groups.png)
+
+展開群組後，可設定共用角色（別名用於比對各集的角色名）：
+
+![群組共用角色](docs/screenshots/group-detail.png)
+
+#### 角色音色
+
+為每個角色挑音色並設定專屬語氣指令。
+
+![角色音色](docs/screenshots/characters.png)
+
+#### 段落與音檔
+
+逐段檢視判定結果：類型（旁白 / 對話）、說話者、情緒、語氣、實際使用的音色。
+
+![段落與音檔](docs/screenshots/segments.png)
+
+#### 設定
+
+Provider（API Key 以 AES-GCM 加密落庫，畫面僅顯示遮蔽值）、模型、備援模型、音色庫。
+
+![設定](docs/screenshots/settings.png)
 
 ### 音檔輸出
 
@@ -121,7 +217,7 @@ mvn -pl web spring-boot:run
 ### 測試
 
 ```bash
-mvn test    # 33 個單元測試
+mvn test    # 50 個單元測試（app 46 + web 4）
 ```
 
 ### 端到端驗證（不需真實 API Key）
@@ -296,6 +392,40 @@ UPDATE app_user SET password_hash = '$2a$10$...', must_change_password = TRUE WH
 SQLEOF
 ```
 
+
+## 小說群組 API
+
+群組層級維護跨集共用的角色音色與旁白音色。
+
+```bash
+# 群組 CRUD
+GET    /api/groups                     # 列表（含 novelCount / characterCount）
+POST   /api/groups                     # 建立
+GET    /api/groups/{id}
+PUT    /api/groups/{id}                # 更新（含 narratorVoiceId / narratorInstructions）
+DELETE /api/groups/{id}                # 刪除（群組角色 cascade；各集保留但 group_id 設 NULL）
+
+# 群組共用角色
+GET    /api/groups/{id}/characters
+POST   /api/groups/{id}/characters     # 建立
+PUT    /api/groups/{id}/characters/{characterId}
+DELETE /api/groups/{id}/characters/{characterId}
+```
+
+匯入小說時指定群組與集數順序：
+
+```bash
+POST /api/novels
+{
+  "title": "燈火重亮 第二集",
+  "content": "……",
+  "groupId": 2,
+  "groupOrder": 2          # 省略則自動接續群組內既有的集數
+}
+```
+
+分析時 `GroupService` 會以**角色名稱與別名**比對群組角色，命中即套用
+群組的音色與 TTS 語氣指令；未命中的角色維持本集自己的設定。
 
 ## 成本追蹤
 

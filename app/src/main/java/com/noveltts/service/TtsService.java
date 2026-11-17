@@ -60,6 +60,7 @@ public class TtsService {
     private final DialogueSegmentRepository segmentRepository;
     private final AudioFileRepository audioFileRepository;
     private final NovelTtsProperties properties;
+    private final GroupService groupService;
 
     public TtsService(OpenRouterClient openRouterClient,
                       TtsGroupBuilder groupBuilder,
@@ -72,7 +73,8 @@ public class TtsService {
                       ChapterRepository chapterRepository,
                       DialogueSegmentRepository segmentRepository,
                       AudioFileRepository audioFileRepository,
-                      NovelTtsProperties properties) {
+                      NovelTtsProperties properties,
+                      GroupService groupService) {
         this.openRouterClient = openRouterClient;
         this.groupBuilder = groupBuilder;
         this.audioTool = audioTool;
@@ -85,6 +87,7 @@ public class TtsService {
         this.segmentRepository = segmentRepository;
         this.audioFileRepository = audioFileRepository;
         this.properties = properties;
+        this.groupService = groupService;
     }
 
     /**
@@ -108,7 +111,7 @@ public class TtsService {
         chapter.setStatus(ChapterStatus.SYNTHESIZING);
         chapterRepository.save(chapter);
 
-        List<TtsGroup> groups = groupBuilder.build(segments);
+        List<TtsGroup> groups = groupBuilder.build(segments, resolveGroupContext(chapter));
         Semaphore semaphore = new Semaphore(Math.max(1, properties.getTtsConcurrency()));
 
         int success = 0;
@@ -437,10 +440,40 @@ public class TtsService {
         return audioFileRepository.save(merged);
     }
 
+    /**
+     * 解析章節所屬群組的旁白覆寫設定。
+     *
+     * 同一本連載小說的各集共用同一個旁白音色與語氣，確保跨集聽感一致。
+     * 章節不屬於任何群組時回傳 none()，沿用全域設定。
+     */
+    private TtsGroupBuilder.GroupContext resolveGroupContext(Chapter chapter) {
+        if (chapter == null || chapter.getNovel() == null) {
+            return TtsGroupBuilder.GroupContext.none();
+        }
+        Novel novel = chapter.getNovel();
+        if (novel.getGroup() == null) {
+            return TtsGroupBuilder.GroupContext.none();
+        }
+        String voiceId = null;
+        String instructions = null;
+        try {
+            var narratorVoice = groupService.findGroupNarratorVoice(novel);
+            if (narratorVoice != null) {
+                voiceId = narratorVoice.getVoiceId();
+            }
+            instructions = groupService.findGroupNarratorInstructions(novel);
+        } catch (Exception e) {
+            // 群組設定讀取失敗不應阻擋合成 —— 退回全域旁白設定即可。
+            log.warn("讀取群組 {} 的旁白設定失敗，改用全域設定", novel.getGroup().getId(), e);
+        }
+        return new TtsGroupBuilder.GroupContext(voiceId, instructions);
+    }
+
     /** 單段重跑。 */
     @Transactional
     public AudioFile synthesizeSingleSegment(DialogueSegment segment) {
-        List<TtsGroup> groups = groupBuilder.build(List.of(segment));
+        List<TtsGroup> groups = groupBuilder.build(List.of(segment),
+                resolveGroupContext(segment.getChapter()));
         if (groups.isEmpty()) {
             throw new IllegalStateException("無法為段落建立合成群組");
         }

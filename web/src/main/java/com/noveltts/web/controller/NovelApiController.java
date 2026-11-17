@@ -63,8 +63,8 @@ public class NovelApiController {
     @GetMapping("/novels")
     public List<ApiModels.NovelDto> listNovels(@RequestParam(required = false) String keyword) {
         List<Novel> novels = (keyword == null || keyword.isBlank())
-                ? novelRepository.findAllByOrderByIdDesc()
-                : novelRepository.findByTitleContainingIgnoreCase(keyword);
+                ? novelRepository.findAllWithGroupByOrderByIdDesc()
+                : novelRepository.findByTitleContainingIgnoreCaseWithGroup(keyword);
         return novels.stream().map(this::toDto).toList();
     }
 
@@ -75,7 +75,8 @@ public class NovelApiController {
 
     @PostMapping("/novels")
     public ResponseEntity<ApiModels.NovelDto> createNovel(@RequestBody Forms.NovelForm form) {
-        Novel novel = novelService.create(form.title(), form.author(), form.content(), null);
+        Novel novel = novelService.create(form.title(), form.author(), form.content(), null,
+                form.groupId(), form.groupOrder());
         return ResponseEntity.ok(toDto(novel));
     }
 
@@ -279,7 +280,9 @@ public class NovelApiController {
     // ---------- helpers ----------
 
     private Novel requireNovel(Long id) {
-        return novelRepository.findById(id)
+        // fetch join 群組：DTO 轉換會讀取 group.title，lazy proxy 在 session
+        // 關閉後會拋 "Could not initialize proxy ... no session"。
+        return novelRepository.findByIdWithGroup(id)
                 .orElseThrow(() -> new NotFoundException("找不到小說 " + id));
     }
 
@@ -295,8 +298,12 @@ public class NovelApiController {
     }
 
     private ApiModels.NovelDto toDto(Novel n) {
+        // group 是 LAZY，在 session 開啟時取；離開 session 後不可再讀取。
+        Long groupId = n.getGroup() == null ? null : n.getGroup().getId();
+        String groupTitle = n.getGroup() == null ? null : n.getGroup().getTitle();
         return new ApiModels.NovelDto(n.getId(), n.getTitle(), n.getAuthor(), n.getStatus().name(),
-                n.getTotalChapters(), n.getTotalChars(), n.getCreatedAt());
+                n.getTotalChapters(), n.getTotalChars(), n.getCreatedAt(),
+                groupId, groupTitle, n.getGroupOrder());
     }
 
     private ApiModels.ChapterDto toDto(Chapter c) {

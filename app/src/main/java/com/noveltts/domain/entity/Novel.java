@@ -41,6 +41,15 @@ public class Novel {
     @Column(name = "total_chars", nullable = false)
     private Integer totalChars = 0;
 
+    /** 所屬群組；null 表示獨立小說。 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id")
+    private NovelGroup group;
+
+    /** 群組內的集數順序（第一集、第二集…）。 */
+    @Column(name = "group_order")
+    private Integer groupOrder;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 

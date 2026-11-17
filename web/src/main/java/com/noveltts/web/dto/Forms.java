@@ -26,7 +26,9 @@ public final class Forms {
                             Boolean enabled, Integer sortOrder) {
     }
 
-    public record NovelForm(String title, String author, String content) {
+    /** 小說匯入。groupId 指定所屬群組，groupOrder 為群組內的集數順序。 */
+    public record NovelForm(String title, String author, String content,
+                            Long groupId, Integer groupOrder) {
     }
 
     public record ChapterForm(String title, String content) {
@@ -41,6 +43,19 @@ public final class Forms {
                               String emotion, String styleHint) {
     }
 
+    /** 小說群組（連載分集共用設定）。 */
+    public record GroupForm(Long id, String title, String author, String description,
+                            Long narratorVoiceId, String narratorInstructions,
+                            Integer ttsGroupMaxChars, String status) {
+    }
+
+    /** 群組共用角色。 */
+    public record GroupCharacterForm(Long id, String name, String[] aliases, String gender,
+                                     String ageGroup, String personality, String description,
+                                     Long ttsVoiceId, String ttsInstructions, String colorHex) {
+    }
+
+    /** 小說匯入（可指定所屬群組與集數順序）。 */
     public record GeneralSettingsForm(String globalInstructions, String narratorVoiceId,
                                       String defaultVoiceId, Boolean autoAssignVoice,
                                       Integer chapterMaxChars, Integer ttsConcurrency,

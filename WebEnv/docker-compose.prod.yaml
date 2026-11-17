@@ -1,0 +1,192 @@
+# ============================================================================
+# 實際部署環境（production）
+# ============================================================================
+#
+# 與同目錄的 docker-compose.yaml（開發用）分工：
+#   - docker-compose.yaml  → 本機開發，快速重啟，用預設值
+#   - docker-compose.prod.yaml → 正式對外服務，資源限制、唯讀 FS、強化 log
+#
+# 執行方式（重要：必須用 -f 指定，否則 podman-compose 會把所有存在的
+# compose 檔依序合併，開發用與部署用的設定會混在一起）：
+#
+#   cd WebEnv
+#   podman-compose -f docker-compose.prod.yaml up -d
+#
+#   # 有 Docker 的環境
+#   docker compose -f docker-compose.prod.yaml up -d
+#
+# ⚠️ project name 與開發版不同（noveltts-prod vs 開發版的目錄名），
+#    因此容器名稱與 network 都會獨立，不會互相干擾。
+#    實際部署請用明確的 container_name 與 project name 避免誤操作。
+#
+# 首次部署前必做：
+#   1. cp .env.example.prod .env.prod   （不要覆蓋開發用的 .env）
+#   2. 填入 POSTGRES_PASSWORD 與 NOVELTTS_MASTER_KEY
+#      openssl rand -base64 32
+#   3. 確認 Cloudflare Tunnel 已設定（見 README「對外服務」章節）
+# ============================================================================
+
+# 獨立 project name：避免與開發版共用 container / network / volume 命名空間
+name: noveltts-prod
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    container_name: noveltts-pg-prod
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-noveltts}"
+      POSTGRES_USER: "${POSTGRES_USER:-noveltts}"
+      # 部署環境強制要求設定密碼，沒有預設值可用
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?部署環境必須設定 POSTGRES_PASSWORD}"
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      TZ: "${TZ:-Asia/Taipei}"
+
+    # 只綁 loopback。對外只走 Cloudflare Tunnel，不直接暴露資料庫。
+    ports:
+      - "127.0.0.1:${POSTGRES_EXPOSE_PORT:-5432}:5432"
+
+    volumes:
+      - noveltts_pgdata_prod:/var/lib/postgresql/data
+
+    # 部署環境不需要對外開 postgres port 給其他工具時可整段移除
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-noveltts} -d ${POSTGRES_DB:-noveltts}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+    # 資源限制說明：
+    # ⚠️ 此機器的 rootless Podman 不支援 memory limit —— cgroup v2 的 delegated
+    #    subtree 只委派了 cpuset/cpu/io/pids，沒有 memory controller。
+    #    設定 memory limit 會讓容器直接啟動失敗：
+    #      crun: opening file `memory.max` for writing: No such file or directory
+    #    記憶體上限改由 postgres 自身的 shared_buffers 與 JVM heap 控制。
+    #    在有完整 cgroup 委派的主機（Docker / 有 memory controller 的 rootless）才建議取消註解。
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1g
+    #       cpus: "1.0"
+
+    # postgres 記憶體調校（對應上面被註解掉的容器層限制）
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=8MB
+
+    # 收緊 log：部署環境不需要看那麼多歷史
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+    # postgres 不需要寫入自身路徑以外的檔案
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    # 含 ffmpeg/ffprobe 的自建映像（TTS 回傳 PCM，必須轉 MP3 才能播放與合併）。
+    # 建置：podman build -t noveltts-app:local -f Dockerfile .
+    image: "${APP_IMAGE:-localhost/noveltts-app:local}"
+    container_name: noveltts-app-prod
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    working_dir: /app
+
+    # 音檔輸出用 named volume：host bind mount 的目錄權限由宿主機決定，
+    # 容器內的非 root 使用者（appuser）會寫不進去。
+    # named volume 由映像建立時的 user 擁有。
+    volumes:
+      - noveltts_storage_prod:/app/storage
+
+    environment:
+      SERVER_PORT: "8090"
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      DB_NAME: "${POSTGRES_DB:-noveltts}"
+      DB_USER: "${POSTGRES_USER:-noveltts}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD:?部署環境必須設定 POSTGRES_PASSWORD}"
+
+      # API Key 加密主金鑰。
+      # ⚠️ 必須固定保存並備份 —— 主金鑰遺失或變更，已加密的 OpenRouter
+      #    API Key 將永久無法解密，必須重新設定。
+      NOVELTTS_MASTER_KEY: "${NOVELTTS_MASTER_KEY:?部署環境必須設定 NOVELTTS_MASTER_KEY（openssl rand -base64 32）}"
+
+      NOVELTTS_STORAGE_ROOT: "/app/storage"
+
+      # ⚠️ 不要在此設定 SERVER_SESSION_COOKIE_SECURE。
+      # application.yml 已是 secure: ${SERVER_SESSION_COOKIE_SECURE:true}，
+      # compose 再傳同名變數會形成「自我引用的 placeholder」，
+      # Spring 啟動時直接失敗：
+      #   Circular placeholder reference 'SERVER_SESSION_COOKIE_SECURE'
+      # 預設即為 true（對外走 https），符合部署需求，不需覆寫。
+      # 若確實要用 http 直連除錯，請直接改 application.yml，不要從 compose 傳。
+
+      TZ: "${TZ:-Asia/Taipei}"
+
+    # JVM 參數：限制 heap，避免與 postgres 競爭記憶體。
+    # MaxRAMPercentage 依容器可見記憶體計算，無 cgroup memory limit 時會看到
+    # 主機總記憶體，因此額外用 -Xmx 給明確上限。
+    JAVA_OPTS: "-Xmx1200m -XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Djava.security.egd=file:/dev/./urandom"
+
+    command: ["sh", "-c", "exec java $JAVA_OPTS -jar /app/web.jar"]
+
+    # 只綁 loopback。對外入口一律走 Cloudflare Tunnel（https://<your-domain>）。
+    # 不要改成 "8090:8090"，那會讓服務繞過 TLS 與 Cloudflare 直接暴露。
+    ports:
+      - "127.0.0.1:${APP_EXPOSE_PORT:-8090}:8090"
+
+    healthcheck:
+      # 用 Java 實作（tools/HealthCheck.java，打 actuator health endpoint）。
+      # 不可用 /dev/tcp：那是 bash 專屬語法，而 healthcheck 預設用 sh。
+      test: ["CMD-SHELL", "java -cp /opt/healthcheck HealthCheck"]
+      interval: 15s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+
+    # 資源限制說明：同 postgres，rootless Podman 在此主機不支援 memory limit
+    # （cgroup v2 未委派 memory controller），設定會讓容器無法啟動。
+    # 記憶體上限改由 JAVA_OPTS 的 -Xmx 控制。
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 2g
+    #       cpus: "2.0"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+    # 禁止容器內行程提權
+    security_opt:
+      - no-new-privileges:true
+
+    # 應用程式不需要寫入自己的 root 檔案系統，只有 /app/storage 與 /tmp 需要寫。
+    # 注意：Spring Boot 需要寫 /tmp（jar 暫存），所以 tmpfs 掛 /tmp。
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+
+volumes:
+  # 明確指定名稱，避免 podman-compose 加上專案名前綴造成資料分散。
+  # 部署版用 _prod 尾綴，與開發版資料完全隔離。
+  noveltts_pgdata_prod:
+    name: noveltts_pgdata_prod
+
+  noveltts_storage_prod:
+    name: noveltts_storage_prod

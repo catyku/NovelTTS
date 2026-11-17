@@ -8,6 +8,7 @@ import com.noveltts.domain.repository.ChapterRepository;
 import com.noveltts.domain.repository.DialogueSegmentRepository;
 import com.noveltts.domain.repository.JobTaskRepository;
 import com.noveltts.domain.repository.NovelCharacterRepository;
+import com.noveltts.domain.repository.NovelGroupRepository;
 import com.noveltts.domain.repository.NovelRepository;
 import com.noveltts.domain.repository.TtsVoiceRepository;
 import com.noveltts.web.dto.ApiModels;
@@ -25,6 +26,7 @@ import java.util.List;
 public class PageController {
 
     private final NovelRepository novelRepository;
+    private final NovelGroupRepository groupRepository;
     private final ChapterRepository chapterRepository;
     private final DialogueSegmentRepository segmentRepository;
     private final NovelCharacterRepository characterRepository;
@@ -33,6 +35,7 @@ public class PageController {
     private final JobTaskRepository jobRepository;
 
     public PageController(NovelRepository novelRepository,
+                          NovelGroupRepository groupRepository,
                           ChapterRepository chapterRepository,
                           DialogueSegmentRepository segmentRepository,
                           NovelCharacterRepository characterRepository,
@@ -40,6 +43,7 @@ public class PageController {
                           AudioFileRepository audioFileRepository,
                           JobTaskRepository jobRepository) {
         this.novelRepository = novelRepository;
+        this.groupRepository = groupRepository;
         this.chapterRepository = chapterRepository;
         this.segmentRepository = segmentRepository;
         this.characterRepository = characterRepository;
@@ -55,7 +59,7 @@ public class PageController {
 
     @GetMapping("/")
     public String dashboard(Model model) {
-        model.addAttribute("novels", novelRepository.findAllByOrderByIdDesc());
+        model.addAttribute("novels", novelRepository.findAllWithGroupByOrderByIdDesc());
         model.addAttribute("jobs", jobRepository.findTop20ByOrderByIdDesc());
         model.addAttribute("voiceCount", voiceRepository.count());
         model.addAttribute("audioCount", audioFileRepository.count());
@@ -64,8 +68,16 @@ public class PageController {
 
     @GetMapping("/novels")
     public String novels(Model model) {
-        model.addAttribute("novels", novelRepository.findAllByOrderByIdDesc());
+        model.addAttribute("novels", novelRepository.findAllWithGroupByOrderByIdDesc());
+        model.addAttribute("groups", groupRepository.findAllWithDetailsByOrderByIdDesc());
         return "novels";
+    }
+
+    /** 小說群組：同一本連載小說的共用角色與旁白音色設定。 */
+    @GetMapping("/groups")
+    public String groups(Model model) {
+        model.addAttribute("groups", groupRepository.findAllWithDetailsByOrderByIdDesc());
+        return "groups";
     }
 
     @GetMapping("/novels/{id}")
@@ -121,7 +133,8 @@ public class PageController {
      * 對使用者而言「找不到」應是 404 而非伺服器錯誤。
      */
     private Novel requireNovel(Long id) {
-        return novelRepository.findById(id)
+        // fetch join 群組：頁面可能顯示所屬群組，lazy proxy 在 session 關閉後失效。
+        return novelRepository.findByIdWithGroup(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "找不到小說 " + id));
     }

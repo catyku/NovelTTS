@@ -20,5 +20,9 @@ logs/
 .project
 
 .env
+# .env 只匹配名稱完全為 .env 的檔案，.env.prod 這類變體不會被涵蓋
+.env.*
+!.env.example
+!.env.example.*
 *.p12
 *.key

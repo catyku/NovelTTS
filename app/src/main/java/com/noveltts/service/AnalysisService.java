@@ -53,6 +53,7 @@ public class AnalysisService {
     private final NovelCharacterRepository characterRepository;
     private final TtsVoiceRepository voiceRepository;
     private final NovelTtsProperties properties;
+    private final GroupService groupService;
 
     public AnalysisService(OpenRouterClient openRouterClient,
                             SegmentParser segmentParser,
@@ -63,7 +64,8 @@ public class AnalysisService {
                             DialogueSegmentRepository segmentRepository,
                             NovelCharacterRepository characterRepository,
                             TtsVoiceRepository voiceRepository,
-                            NovelTtsProperties properties) {
+                            NovelTtsProperties properties,
+                            GroupService groupService) {
         this.openRouterClient = openRouterClient;
         this.segmentParser = segmentParser;
         this.aiSettingsService = aiSettingsService;
@@ -73,6 +75,7 @@ public class AnalysisService {
         this.segmentRepository = segmentRepository;
         this.characterRepository = characterRepository;
         this.voiceRepository = voiceRepository;
+        this.groupService = groupService;
         this.properties = properties;
     }
 
@@ -197,9 +200,16 @@ public class AnalysisService {
         return null;
     }
 
+    /**
+     * 取得或建立該集的角色。
+     *
+     * 若此小說屬於群組，會自動比對群組共用角色並套用其音色與語氣，
+     * 讓同一角色在不同集之間音色一致。已存在的角色也會重新套用群組設定
+     * （例如後來才在群組設定音色，此時重新分析即可生效）。
+     */
     @Transactional
     public NovelCharacter findOrCreateCharacter(Novel novel, String name) {
-        return characterRepository.findByNovelIdAndName(novel.getId(), name)
+        NovelCharacter character = characterRepository.findByNovelIdAndName(novel.getId(), name)
                 .orElseGet(() -> {
                     NovelCharacter c = new NovelCharacter();
                     c.setNovel(novel);
@@ -208,6 +218,10 @@ public class AnalysisService {
                     c.setColorHex(pickColor(name));
                     return characterRepository.save(c);
                 });
+
+        // 群組共用角色：自動套用音色與語氣（分析時自動套用，仍可在該集微調）。
+        groupService.applyGroupCharacter(novel, character, name);
+        return character;
     }
 
     /** 依角色名穩定分配色碼，讓 UI 上同一角色永遠同色。 */
