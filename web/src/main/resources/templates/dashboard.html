@@ -26,6 +26,8 @@
 <main>
   <h1>儀表板</h1>
 
+  <div th:if="${passwordChanged}" class="alert alert-success">密碼已更新</div>
+
   <div class="panel">
     <div class="row">
       <div><strong th:text="${#lists.size(novels)}">0</strong> 本小說</div>

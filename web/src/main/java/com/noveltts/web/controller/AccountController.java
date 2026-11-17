@@ -7,6 +7,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * 帳號密碼管理。
@@ -43,7 +44,8 @@ public class AccountController {
                                  @RequestParam("currentPassword") String currentPassword,
                                  @RequestParam("newPassword") String newPassword,
                                  @RequestParam("confirmPassword") String confirmPassword,
-                                 Model model) {
+                                 Model model,
+                                 RedirectAttributes redirectAttributes) {
         String username = authentication != null ? authentication.getName() : null;
 
         if (!newPassword.equals(confirmPassword)) {
@@ -55,10 +57,12 @@ public class AccountController {
             return fail(model, username, error);
         }
 
-        model.addAttribute("success", "密碼已更新");
-        model.addAttribute("username", username);
-        model.addAttribute("required", false);
-        return "account-password";
+        // 成功後導回首頁（POST-Redirect-GET）：
+        // 直接 render 同一個 view 會讓瀏覽器停留在 POST 的網址，
+        // 重新整理會再送出一次表單。用 flash attribute 帶提示，
+        // 重新整理首頁不會重複顯示。
+        redirectAttributes.addFlashAttribute("passwordChanged", true);
+        return "redirect:/";
     }
 
     private String fail(Model model, String username, String error) {
