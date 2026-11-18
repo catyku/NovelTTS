@@ -1,0 +1,213 @@
+package com.noveltts.service;
+
+import com.noveltts.ai.AiCallException;
+import com.noveltts.ai.GatewayProvider;
+import com.noveltts.ai.OpenRouterClient;
+import com.noveltts.ai.PromptBuilder;
+import com.noveltts.ai.SegmentParser;
+import com.noveltts.ai.dto.ChatMessage;
+import com.noveltts.ai.dto.ChatResult;
+import com.noveltts.ai.dto.SegmentAnalysis;
+import com.noveltts.ai.dto.SpeechResult;
+import com.noveltts.ai.dto.TtsRequest;
+import com.noveltts.ai.dto.TtsTurn;
+import com.noveltts.config.NovelTtsProperties;
+import com.noveltts.domain.entity.Chapter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 無狀態 AI 閘道：伺服器只負責把請求轉送到 OpenRouter，不保存任何使用者資料。
+ *
+ * <p>使用情境：小說內容、角色設定、音檔全部存放在瀏覽器（IndexedDB），
+ * 使用者自己的 OpenRouter API Key 存在 localStorage。瀏覽器呼叫本閘道時
+ * 以 {@code X-OpenRouter-Key} 標頭帶上 Key，伺服器僅在該次請求中使用。
+ *
+ * <p>與既有 {@link AnalysisService} / {@link TtsService} 的差異：那些服務會把
+ * 結果寫入資料庫與磁碟；本服務只回傳結果，呼叫端自行保存。
+ */
+@Service
+public class GatewayService {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayService.class);
+
+    /** 分析呼叫的重試嘗試次數（含首次呼叫）。 */
+    private static final int MAX_CHAT_ATTEMPTS = 3;
+
+    /** 重試退避基準（毫秒），第 n 次等待 base * 2^n。 */
+    private static final long RETRY_BACKOFF_BASE_MS = 1000L;
+
+    private final OpenRouterClient openRouterClient;
+    private final SegmentParser segmentParser;
+    private final NovelTtsProperties properties;
+
+    public GatewayService(OpenRouterClient openRouterClient,
+                          SegmentParser segmentParser,
+                          NovelTtsProperties properties) {
+        this.openRouterClient = openRouterClient;
+        this.segmentParser = segmentParser;
+        this.properties = properties;
+    }
+
+    /**
+     * 分析一段章節內容，回傳段落與角色。
+     *
+     * <p>章節標題以獨立欄位傳入，不併入 content —— AI 若把標題當成旁白會念出來。
+     *
+     * @param chapterTitle 章節標題（可為 null）
+     * @param chapterContent 章節內文
+     */
+    public SegmentAnalysis analyze(GatewayProvider provider, String model,
+                                   String fallbackModelId,
+                                   String chapterTitle, String chapterContent,
+                                   Double temperature, Integer maxTokens,
+                                   Map<String, Object> extraParams) {
+        if (chapterContent == null || chapterContent.isBlank()) {
+            throw new IllegalArgumentException("章節內容為空");
+        }
+        Chapter chapter = new Chapter();
+        chapter.setTitle(chapterTitle);
+        chapter.setContent(chapterContent);
+
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(new ChatMessage("system", PromptBuilder.SYSTEM_PROMPT));
+        messages.add(new ChatMessage("user", PromptBuilder.userPrompt(chapter)));
+
+        String content = callChatWithFallback(provider, model, fallbackModelId, messages,
+                temperature, maxTokens, extraParams);
+        return segmentParser.parse(content);
+    }
+
+    /**
+     * 語音合成，回傳 PCM 位元組。
+     *
+     * <p>回傳 PCM 而非 MP3：轉檔在 server 端做（見 web 層的 controller），
+     * 瀏覽器不需要 ffmpeg.wasm。
+     */
+    public SpeechResult synthesize(GatewayProvider provider, String model,
+                                   String fallbackModelId,
+                                   List<TtsTurn> turns, String globalInstructions) {
+        if (turns == null || turns.isEmpty()) {
+            throw new IllegalArgumentException("TTS 請求沒有任何 turn");
+        }
+        Map<String, Object> providerParams = Map.of("zdr", true);
+        TtsRequest request = TtsRequest.fromTurns(model, turns, globalInstructions, providerParams);
+        return callSpeechWithFallback(provider, model, fallbackModelId, request, turns,
+                globalInstructions, providerParams);
+    }
+
+    /** 列出可用的語音模型。 */
+    public List<com.noveltts.ai.dto.ModelInfo> listModels(GatewayProvider provider) {
+        return openRouterClient.listModels(provider);
+    }
+
+    /** 測試 provider 連線。 */
+    public String testConnection(GatewayProvider provider) {
+        try {
+            List<com.noveltts.ai.dto.ModelInfo> models = openRouterClient.listModels(provider);
+            return "連線成功，可用模型 " + models.size() + " 個";
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("連線測試失敗: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 分析呼叫：429/5xx 退避重試，仍失敗則改用備援模型。
+     */
+    private String callChatWithFallback(GatewayProvider provider, String model,
+                                        String fallbackModelId, List<ChatMessage> messages,
+                                        Double temperature, Integer maxTokens,
+                                        Map<String, Object> extraParams) {
+        AiCallException lastError = null;
+
+        for (int attempt = 0; attempt < MAX_CHAT_ATTEMPTS; attempt++) {
+            try {
+                ChatResult result = openRouterClient.chat(provider, model, messages,
+                        temperature, maxTokens, extraParams);
+                return result.content();
+            } catch (AiCallException e) {
+                lastError = e;
+                if (!e.isRetryable()) {
+                    break;
+                }
+                log.warn("分析呼叫失敗 (HTTP {})，第 {}/{} 次重試: {}",
+                        e.getStatusCode(), attempt + 1, MAX_CHAT_ATTEMPTS, e.getMessage());
+                if (attempt < MAX_CHAT_ATTEMPTS - 1) {
+                    sleepBackoff(attempt);
+                }
+            }
+        }
+
+        if (fallbackModelId != null && !fallbackModelId.isBlank()) {
+            log.warn("主要模型 {} 失敗，改用備援模型 {}", model, fallbackModelId);
+            try {
+                ChatResult result = openRouterClient.chat(provider, fallbackModelId, messages,
+                        temperature, maxTokens, extraParams);
+                return result.content();
+            } catch (AiCallException e) {
+                log.error("備援模型 {} 同样失敗 (HTTP {}): {}",
+                        fallbackModelId, e.getStatusCode(), e.getMessage());
+                lastError = e;
+            }
+        }
+
+        throw lastError != null ? lastError
+                : new IllegalStateException("分析呼叫失敗且未取得具體錯誤");
+    }
+
+    /**
+     * 語音合成呼叫：429/5xx 退避重試，仍失敗則改用備援模型。
+     */
+    private SpeechResult callSpeechWithFallback(GatewayProvider provider, String model,
+                                                String fallbackModelId, TtsRequest request,
+                                                List<TtsTurn> turns, String globalInstructions,
+                                                Map<String, Object> providerParams) {
+        AiCallException lastError = null;
+
+        for (int attempt = 0; attempt < MAX_CHAT_ATTEMPTS; attempt++) {
+            try {
+                return openRouterClient.speech(provider, request);
+            } catch (AiCallException e) {
+                lastError = e;
+                if (!e.isRetryable()) {
+                    break;
+                }
+                log.warn("TTS 呼叫失敗 (HTTP {})，第 {}/{} 次重試: {}",
+                        e.getStatusCode(), attempt + 1, MAX_CHAT_ATTEMPTS, e.getMessage());
+                if (attempt < MAX_CHAT_ATTEMPTS - 1) {
+                    sleepBackoff(attempt);
+                }
+            }
+        }
+
+        if (fallbackModelId != null && !fallbackModelId.isBlank()) {
+            log.warn("主要模型 {} 失敗，改用備援模型 {}", model, fallbackModelId);
+            TtsRequest fallbackRequest = TtsRequest.fromTurns(
+                    fallbackModelId, turns, globalInstructions, providerParams);
+            try {
+                return openRouterClient.speech(provider, fallbackRequest);
+            } catch (AiCallException e) {
+                log.error("備援模型 {} 同样失敗 (HTTP {}): {}",
+                        fallbackModelId, e.getStatusCode(), e.getMessage());
+                lastError = e;
+            }
+        }
+
+        throw lastError != null ? lastError
+                : new IllegalStateException("TTS 呼叫失敗且未取得具體錯誤");
+    }
+
+    private void sleepBackoff(int attempt) {
+        try {
+            Thread.sleep(RETRY_BACKOFF_BASE_MS * (1L << attempt));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("重試等待被中斷", e);
+        }
+    }
+}

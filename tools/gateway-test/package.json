@@ -1,0 +1,12 @@
+{
+  "name": "novel-tts-gateway-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "端到端整合測試：瀏覽器資料層 + 無狀態閘道 + 真實 OpenRouter",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "fake-indexeddb": "^6.0.0"
+  }
+}

@@ -43,6 +43,69 @@ public class OpenRouterClient {
         this.cryptoService = cryptoService;
     }
 
+    /**
+     * 無狀態閘道版：API Key 由呼叫端在本次請求中提供，伺服器不保存。
+     */
+    public ChatResult chat(GatewayProvider config, String model, List<ChatMessage> messages,
+                           Double temperature, Integer maxTokens, Map<String, Object> extraParams) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("messages", messages.stream()
+                .map(m -> Map.of("role", m.role(), "content", m.content()))
+                .toList());
+        if (temperature != null) {
+            body.put("temperature", temperature);
+        }
+        if (maxTokens != null) {
+            body.put("max_tokens", maxTokens);
+        }
+        if (extraParams != null && !extraParams.isEmpty()) {
+            body.putAll(extraParams);
+        }
+        body.put("response_format", Map.of("type", "json_object"));
+
+        Map<String, Object> response = exchange(config, "/chat/completions", body, Map.class);
+        String content = extractContent(response);
+        ChatUsage usage = extractUsage(response);
+        return new ChatResult(content, usage);
+    }
+
+    /**
+     * 無狀態閘道版語音合成：回傳 raw PCM 位元組。
+     */
+    public SpeechResult speech(GatewayProvider config, TtsRequest request) {
+        RestClient client = buildClient(config);
+        ResponseEntity<byte[]> response = client.post()
+                .uri("/audio/speech")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .toEntity(byte[].class);
+
+        byte[] body = response.getBody();
+        if (body == null || body.length == 0) {
+            throw new IllegalStateException("TTS 回應內容為空");
+        }
+        String contentType = response.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE);
+        String generationId = response.getHeaders().getFirst("X-Generation-Id");
+        return new SpeechResult(body, contentType, generationId);
+    }
+
+    /**
+     * 無狀態閘道版模型清單。
+     */
+    @SuppressWarnings("unchecked")
+    public List<ModelInfo> listModels(GatewayProvider config) {
+        RestClient client = buildClient(config);
+        Map<String, Object> response = client.get()
+                .uri(uriBuilder -> uriBuilder.path("/models")
+                        .queryParam("output_modalities", "speech")
+                        .build())
+                .retrieve()
+                .body(Map.class);
+        return parseModels(response);
+    }
+
     public ChatResult chat(AiProviderConfig config, String model, List<ChatMessage> messages,
                            Double temperature, Integer maxTokens, Map<String, Object> extraParams) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -98,6 +161,12 @@ public class OpenRouterClient {
                         .build())
                 .retrieve()
                 .body(Map.class);
+        return parseModels(response);
+    }
+
+    /** 解析 OpenRouter models 回應。 */
+    @SuppressWarnings("unchecked")
+    private List<ModelInfo> parseModels(Map<String, Object> response) {
         List<ModelInfo> result = new ArrayList<>();
         if (response == null) {
             return result;
@@ -152,6 +221,31 @@ public class OpenRouterClient {
     }
 
     @SuppressWarnings("unchecked")
+    /** 無狀態閘道版 POST 呼叫：API Key 由本次請求提供。 */
+    private Map<String, Object> exchange(GatewayProvider config, String path,
+                                         Map<String, Object> body, Class<?> type) {
+        RestClient client = buildClient(config);
+        try {
+            Map<String, Object> response = client.post()
+                    .uri(path)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+            if (response == null) {
+                throw new IllegalStateException("AI 回應為空");
+            }
+            return response;
+        } catch (RestClientResponseException e) {
+            String detail = e.getResponseBodyAsString();
+            throw new AiCallException(e.getStatusCode().value(),
+                    "OpenRouter 呼叫失敗 (HTTP " + e.getStatusCode().value() + "): "
+                            + (detail == null || detail.isBlank() ? e.getMessage() : detail), e);
+        } catch (RestClientException e) {
+            throw new AiCallException(0, "OpenRouter 呼叫失敗: " + e.getMessage(), e);
+        }
+    }
+
     private Map<String, Object> exchange(AiProviderConfig config, String path,
                                           Map<String, Object> body, Class<?> type) {
         String apiKey = cryptoService.resolveApiKey(config);
@@ -254,6 +348,15 @@ public class OpenRouterClient {
             return Boolean.parseBoolean(s.trim());
         }
         return null;
+    }
+
+    private RestClient buildClient(GatewayProvider config) {
+        RestClient.Builder b = builder.clone().baseUrl(config.baseUrl());
+        b.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + (config.apiKey() == null ? "" : config.apiKey()));
+        for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
+            b.defaultHeader(e.getKey(), e.getValue());
+        }
+        return b.build();
     }
 
     private RestClient buildClient(AiProviderConfig config, String apiKey) {

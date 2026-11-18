@@ -21,11 +21,14 @@ public class SecurityConfig {
 
     private final MustChangePasswordFilter mustChangePasswordFilter;
     private final AccountService accountService;
+    private final GatewayRateLimitFilter gatewayRateLimitFilter;
 
     public SecurityConfig(MustChangePasswordFilter mustChangePasswordFilter,
-                          AccountService accountService) {
+                          AccountService accountService,
+                          GatewayRateLimitFilter gatewayRateLimitFilter) {
         this.mustChangePasswordFilter = mustChangePasswordFilter;
         this.accountService = accountService;
+        this.gatewayRateLimitFilter = gatewayRateLimitFilter;
     }
 
     /**
@@ -57,7 +60,13 @@ public class SecurityConfig {
                         .requestMatchers("/login", "/do-login", "/error").permitAll()
                         // health check 不需登入
                         .requestMatchers("/actuator/health").permitAll()
+                        // 無狀態 AI 閘道：使用者自帶 OpenRouter Key，不需要帳號。
+                        // 閘道不讀寫任何使用者資料，呼叫次數由 GatewayRateLimitFilter 限制。
+                        .requestMatchers("/api/gateway/**").permitAll()
                         .anyRequest().authenticated())
+                // 閘道是無狀態 API：以 X-OpenRouter-Key 標頭驗證，不依賴 cookie，
+                // 因此不需要 CSRF token。放行這條路徑的 CSRF 檢查。
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/gateway/**"))
                 .formLogin(form -> form
                         .loginPage("/login")
                         .loginProcessingUrl("/do-login")
@@ -73,7 +82,10 @@ public class SecurityConfig {
                         .permitAll())
                 // 強制變更密碼：必須排在 Security filter chain 之後，
                 // 才能讀到 SecurityContext 中的登入身分。
-                .addFilterAfter(mustChangePasswordFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterAfter(mustChangePasswordFilter, UsernamePasswordAuthenticationFilter.class)
+                // 閘道限流必須在 Security chain 之前，且排在 ForwardedHeaderFilter 之後，
+                // 這樣才能讀到 Cloudflare 傳來的 CF-Connecting-IP。
+                .addFilterBefore(gatewayRateLimitFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
