@@ -68,6 +68,47 @@ public class GatewayApiController {
     }
 
     /**
+     * 生成小說大綱。
+     *
+     * <p>與其他閘道端點一樣是無狀態的：伺服器只把請求轉給 OpenRouter 再回傳，
+     * 不保存使用者的大綱或設定。
+     */
+    @PostMapping("/generate-outline")
+    public Map<String, Object> generateOutline(
+            @RequestHeader(value = "X-OpenRouter-Key", required = false) String apiKey,
+            @RequestHeader(value = "X-OpenRouter-Base-Url", required = false) String baseUrl,
+            @RequestBody GenerateRequest request) {
+        GatewayProvider provider = provider(apiKey, baseUrl, request.baseUrl());
+        String outline = gatewayService.generateOutline(provider,
+                request.model(), request.fallbackModelId(),
+                request.idea(), request.effectiveChapterCount(),
+                request.effectiveMinChars(), request.effectiveMaxChars(),
+                request.temperature(), request.maxTokens(), request.extraParams());
+        return Map.of("outline", outline);
+    }
+
+    /**
+     * 生成單一章節正文。
+     */
+    @PostMapping("/generate-chapter")
+    public Map<String, Object> generateChapter(
+            @RequestHeader(value = "X-OpenRouter-Key", required = false) String apiKey,
+            @RequestHeader(value = "X-OpenRouter-Base-Url", required = false) String baseUrl,
+            @RequestBody GenerateRequest request) {
+        GatewayProvider provider = provider(apiKey, baseUrl, request.baseUrl());
+        String content = gatewayService.generateChapter(provider,
+                request.model(), request.fallbackModelId(),
+                request.idea(), request.effectiveChapterNumber(), request.effectiveChapterCount(),
+                request.effectiveMinChars(), request.effectiveMaxChars(),
+                request.outline(), request.previousEnding(), request.extra(),
+                request.temperature(), request.maxTokens(), request.extraParams());
+        return Map.of(
+                "chapterNumber", request.effectiveChapterNumber(),
+                "content", content,
+                "charCount", content == null ? 0 : content.length());
+    }
+
+    /**
      * 語音合成，回傳 MP3。
      *
      * <p>server 端轉檔（PCM → MP3）後再回傳位元組，瀏覽器直接存成 Blob，
@@ -170,6 +211,55 @@ public class GatewayApiController {
             Map<String, Object> extraParams,
             String baseUrl
     ) {
+    }
+
+    /** 生成請求（大綱與章節共用）。 */
+    public record GenerateRequest(
+            String model,
+            String fallbackModelId,
+            String idea,
+            Integer chapterNumber,
+            Integer chapterCount,
+            Integer minChars,
+            Integer maxChars,
+            String outline,
+            String previousEnding,
+            String extra,
+            Double temperature,
+            Integer maxTokens,
+            Map<String, Object> extraParams,
+            String baseUrl
+    ) {
+        /**
+         * 實際章節數。
+         *
+         * <p>record 的 accessor 不能改回傳型別，所以用不同的方法名稱做正規化。
+         */
+        public int effectiveChapterCount() {
+            return chapterCount == null || chapterCount < 1 ? 1 : chapterCount;
+        }
+
+        /**
+         * 實際字數下限。
+         *
+         * <p>只有「沒給」（null）才用預設值；明確給了 0 或負數是無效輸入，
+         * 交給服務層擋下並回 400 —— 靜默改寫成 1000 會讓使用者以為
+         * 自己設定的字數被採用了。
+         */
+        public int effectiveMinChars() {
+            return minChars == null ? 1000 : minChars;
+        }
+
+        /** 實際字數上限；小於下限時以下限為準。 */
+        public int effectiveMaxChars() {
+            if (maxChars == null) return 3000;
+            return Math.max(maxChars, effectiveMinChars());
+        }
+
+        /** 實際章序。 */
+        public int effectiveChapterNumber() {
+            return chapterNumber == null || chapterNumber < 1 ? 1 : chapterNumber;
+        }
     }
 
     /** 合成請求。 */

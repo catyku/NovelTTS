@@ -66,6 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/gateway/**").permitAll()
                         // 訪客模式的頁面：資料在瀏覽器，頁面本身不含任何使用者資料。
                         .requestMatchers("/", "/novels", "/novels/**", "/groups", "/settings").permitAll()
+                        // AI 生成小說頁：生成過程在瀏覽器端呼叫無狀態閘道
+                        .requestMatchers("/generate").permitAll()
                         // 使用說明頁與其截圖：公開的教學內容
                         .requestMatchers("/guide", "/docs/**").permitAll()
                         // 範例內容：說明頁的「試試看」區塊使用

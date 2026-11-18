@@ -22,6 +22,7 @@
 
 ```
 小說純文字（存在你的瀏覽器）
+   ↑  AI 生成（可選：想法 + 章節數 + 字數範圍 → 逐章寫出，產生歷史記錄）
    ↓  AI 分析（chat/completions，經由無狀態閘道）
 切章 → 逐段判定「旁白 / 哪個角色說話」→ 抽出情緒與語氣
    ↓  音色指派（群組共用音色優先，否則手動指定）
@@ -31,6 +32,28 @@
         ↓  全部存回你的瀏覽器（IndexedDB）
 ```
 
+### AI 生成小說
+
+不想自己打字，可以讓 AI 從一個想法把故事寫出來。
+
+到「AI 生成」頁填入：
+
+| 欄位 | 說明 |
+|---|---|
+| 你的想法（提示詞） | 想寫什麼樣的故事 |
+| 章節數 | 要生成幾章（上限 50） |
+| 每章最少／最多字數 | 字數範圍，AI 會盡量落在區間內 |
+| 額外指示 | 例如「多用短句，視角限制在主角」 |
+
+流程：
+
+1. **產生大綱**（可選）—— 先列出每章的標題與走向，之後每章都帶著它生成。
+2. **逐章生成** —— 每章呼叫一次 AI，並把上一章的結尾帶進去保持劇情連貫。
+   可以中途停止，已完成的章節會保留。
+3. **取用成果** —— 下載 TXT，或按「匯入為小說並前往語音合成」直接接上既有流程。
+
+生成歷史存在瀏覽器，可查看、刪除、或載入回來繼續用。伺服器不保存任何生成內容。
+
 ### 訪客模式：不需要帳密，資料留在你的瀏覽器
 
 打開網址就能用，不用註冊、也不用登入。
@@ -38,6 +61,7 @@
 | 資料 | 放在哪 |
 |---|---|
 | 小說內文、章節、角色、段落 | 你的瀏覽器 IndexedDB |
+| AI 生成的小說與生成歷史 | 你的瀏覽器 IndexedDB |
 | 音檔（MP3） | 你的瀏覽器 IndexedDB（Blob） |
 | 群組設定、音色指派 | 你的瀏覽器 IndexedDB |
 | OpenRouter API Key | 你的瀏覽器 localStorage |
@@ -224,6 +248,10 @@ mvn -pl web spring-boot:run
 以下截圖取自實際部署環境，資料由真實 OpenRouter（`google/gemini-3-flash-preview` +
 `google/gemini-3.8-flash-tts`）產生，非 mock。
 
+#### AI 生成小說
+
+![AI 生成小說](docs/screenshots/guide/15-generate-result.png)
+
 #### 訪客模式的設定頁
 
 不用登入就能用。填入你自己的 OpenRouter API Key —— 這把 Key 只存在你的瀏覽器
@@ -313,6 +341,15 @@ OPENROUTER_API_KEY=sk-or-v1-... node full-pipeline-test.js
 
 `full-pipeline-test.js` 會實際跑完整條線：切章 → 分析 → 角色 → 群組音色 →
 合成 → 合併本章 → 合併整本 → ZIP，並驗證匯出資料不含 API Key。
+
+### AI 生成的驗證（不需真實 API Key）
+
+```bash
+cd tools/gateway-test
+node generate-test.js
+```
+
+覆蓋大綱生成、章節生成、參數正規化（缺省值、上下限夾限）與錯誤處理。
 
 ### 端到端驗證（不需真實 API Key）
 
@@ -501,6 +538,8 @@ SQLEOF
 | 端點 | 方法 | 說明 |
 |---|---|---|
 | `/api/gateway/analyze` | POST | 章節文字 → 段落與角色判定 |
+| `/api/gateway/generate-outline` | POST | 想法 → 小說大綱 |
+| `/api/gateway/generate-chapter` | POST | 想法 + 章序 → 該章正文 |
 | `/api/gateway/synthesize` | POST | turns → MP3（server 端 PCM→MP3） |
 | `/api/gateway/merge` | POST | 多個 MP3 → 合併後的 MP3 |
 | `/api/gateway/zip` | POST | 多個檔案 → ZIP |

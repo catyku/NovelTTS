@@ -2,6 +2,7 @@ package com.noveltts.service;
 
 import com.noveltts.ai.AiCallException;
 import com.noveltts.ai.GatewayProvider;
+import com.noveltts.ai.GenerationPromptBuilder;
 import com.noveltts.ai.OpenRouterClient;
 import com.noveltts.ai.PromptBuilder;
 import com.noveltts.ai.SegmentParser;
@@ -81,6 +82,59 @@ public class GatewayService {
         String content = callChatWithFallback(provider, model, fallbackModelId, messages,
                 temperature, maxTokens, extraParams);
         return segmentParser.parse(content);
+    }
+
+    /**
+     * 生成小說大綱（純文字）。
+     *
+     * <p>大綱是選用的：使用者可以跳過它，直接逐章生成。
+     * 有大綱時，每一章的 prompt 都會帶上它，維持全書一致性。
+     */
+    public String generateOutline(GatewayProvider provider, String model,
+                                  String fallbackModelId,
+                                  String idea, int chapterCount,
+                                  int minChars, int maxChars,
+                                  Double temperature, Integer maxTokens,
+                                  Map<String, Object> extraParams) {
+        if (idea == null || idea.isBlank()) {
+            throw new IllegalArgumentException("創作想法為空");
+        }
+        List<ChatMessage> messages = List.of(
+                new ChatMessage("system", GenerationPromptBuilder.SYSTEM_PROMPT),
+                new ChatMessage("user", GenerationPromptBuilder.outlinePrompt(
+                        idea, chapterCount, minChars, maxChars)));
+        return callChatWithFallback(provider, model, fallbackModelId, messages,
+                temperature, maxTokens, extraParams).trim();
+    }
+
+    /**
+     * 生成單一章節正文。
+     *
+     * @param previousEnding 上一章結尾摘錄（可為 null），維持劇情連貫
+     */
+    public String generateChapter(GatewayProvider provider, String model,
+                                  String fallbackModelId,
+                                  String idea, int chapterNumber, int totalChapters,
+                                  int minChars, int maxChars,
+                                  String outline, String previousEnding, String extra,
+                                  Double temperature, Integer maxTokens,
+                                  Map<String, Object> extraParams) {
+        if (idea == null || idea.isBlank()) {
+            throw new IllegalArgumentException("創作想法為空");
+        }
+        if (chapterNumber < 1 || chapterNumber > totalChapters) {
+            throw new IllegalArgumentException("章序超出範圍: " + chapterNumber);
+        }
+        if (minChars < 1 || maxChars < minChars) {
+            throw new IllegalArgumentException("字數範圍不合法");
+        }
+        List<ChatMessage> messages = List.of(
+                new ChatMessage("system", GenerationPromptBuilder.SYSTEM_PROMPT),
+                new ChatMessage("user", GenerationPromptBuilder.chapterPrompt(
+                        idea, chapterNumber, totalChapters, minChars, maxChars,
+                        outline, previousEnding, extra)));
+        return callChatWithFallback(provider, model, fallbackModelId, messages,
+                temperature, maxTokens, extraParams).trim();
     }
 
     /**

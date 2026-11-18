@@ -7,17 +7,18 @@
  * - OpenRouter API Key 存在 localStorage，呼叫閘道時以標頭帶上
  *
  * 資料表：
- * - novels     小說（內含章節、角色、段落的巢狀結構）
- * - groups     小說群組（跨集共用角色音色）
- * - audio      音檔（Blob），key = "<novelId>:<kind>:<refId>"
- * - settings   使用者設定（單筆）
+ * - novels      小說（內含章節、角色、段落的巢狀結構）
+ * - groups      小說群組（跨集共用角色音色）
+ * - audio       音檔（Blob），key = "<novelId>:<kind>:<refId>"
+ * - settings    使用者設定（單筆）
+ * - generations AI 生成小說的歷史記錄（含完整正文）
  */
 (function (global) {
   'use strict';
 
   const DB_NAME = 'novel-tts';
-  const DB_VERSION = 1;
-  const STORES = ['novels', 'groups', 'audio', 'settings'];
+  const DB_VERSION = 2;
+  const STORES = ['novels', 'groups', 'audio', 'settings', 'generations'];
 
   let dbPromise = null;
 
@@ -327,8 +328,38 @@
     },
   };
 
+  /**
+   * AI 生成小說的歷史記錄。
+   *
+   * <p>存在瀏覽器而非伺服器 —— 與其他訪客資料一致，server 端不保存。
+   * 每筆記錄包含：使用者的想法、章節設定、產出的大綱與各章正文。
+   */
+  const generations = {
+    async list() {
+      const rows = await store.getAll('generations');
+      return rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    },
+    async get(id) {
+      return store.get('generations', id);
+    },
+    async save(record) {
+      record.updatedAt = Date.now();
+      if (!record.createdAt) record.createdAt = record.updatedAt;
+      await store.put('generations', record);
+      return record;
+    },
+    async remove(id) {
+      await store.remove('generations', id);
+    },
+    /** 產生新 id。 */
+    newId() {
+      return 'gen_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    },
+  };
+
   window.NovelTtsDB = {
     store: store,
+    generations: generations,
     settings: settings,
     credentials: credentials,
     novels: novels,
@@ -341,6 +372,7 @@
         exportedAt: new Date().toISOString(),
         novels: await store.getAll('novels'),
         groups: await store.getAll('groups'),
+        generations: await store.getAll('generations'),
         settings: await settings.get(),
       };
     },

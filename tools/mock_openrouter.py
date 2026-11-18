@@ -107,11 +107,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def _handle_chat(self, body):
-        """回傳一段涵蓋旁白與兩種角色對話的分析結果。"""
+        """回傳分析結果；若是生成 prompt 則回傳對應的生成內容。"""
         user_msg = ""
         for m in body.get("messages", []):
             if m.get("role") == "user":
                 user_msg = m.get("content", "")
+
+        # 生成類 prompt：回傳純文字（不是分析 JSON）
+        if "【本章任務】" in user_msg or "【任務】" in user_msg:
+            self._json(200, self._chat_response(self._mock_generation(user_msg)))
+            return
 
         title = "第一章"
         if "《" in user_msg and "》" in user_msg:
@@ -160,6 +165,62 @@ class Handler(BaseHTTPRequestHandler):
                 "cost_details": {"upstream_inference_cost": None},
             },
         })
+
+    def _mock_generation(self, user_msg):
+        """依 prompt 內容產生 mock 的生成結果。"""
+        if "【任務】" in user_msg and "大綱" in user_msg:
+            # 大綱請求
+            n = 3
+            for line in user_msg.split("\n"):
+                if "包含" in line and "章" in line:
+                    try:
+                        n = int(line.split("包含")[1].strip().split("章")[0].strip())
+                    except (ValueError, IndexError):
+                        pass
+            rows = [f"第{i}章 標題{i} —— 這是第 {i} 章發生的事" for i in range(1, n + 1)]
+            return "\n".join(rows)
+
+        # 章節正文請求
+        # 只看【本章任務】區塊 —— 大綱裡也有「這是第 N 章發生的事」，
+        # 若不限定區塊會取到最後一個匹配而不是本章的章號。
+        chapter_no = 1
+        in_task = False
+        for line in user_msg.split("\n"):
+            if "【本章任務】" in line:
+                in_task = True
+                continue
+            if in_task and line.startswith("【"):
+                break
+            if in_task and "這是第" in line and "章" in line:
+                try:
+                    chapter_no = int(line.split("這是第")[1].strip().split("章")[0].strip())
+                except (ValueError, IndexError):
+                    pass
+        target = 500
+        for line in user_msg.split("\n"):
+            if "篇幅" in line and "字" in line:
+                try:
+                    target = int(line.split("：")[1].strip().split("至")[0].strip())
+                except (ValueError, IndexError):
+                    pass
+        body = "".join(f"這是第 {chapter_no} 章的第 {i} 句正文。" for i in range(target // 12))
+        return body or f"第 {chapter_no} 章的內容。"
+
+    def _chat_response(self, content):
+        """包成 OpenRouter chat 回應格式。"""
+        return {
+            "id": "mock-chat-generate",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": content}}],
+            "usage": {
+                "prompt_tokens": 200,
+                "completion_tokens": 800,
+                "total_tokens": 1000,
+                "cost": 0.002,
+                "is_byok": False,
+                "cost_details": {"upstream_inference_cost": None},
+            },
+        }
 
     def _handle_speech(self, body):
         """回傳 raw PCM。"""

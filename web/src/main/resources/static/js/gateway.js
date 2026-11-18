@@ -116,6 +116,76 @@
       return response.blob();
     },
 
+    /**
+     * 生成小說大綱。
+     *
+     * @param {object} opts {idea, chapterCount, minChars, maxChars}
+     * @returns {Promise<string>} 大綱文字
+     */
+    async generateOutline(opts) {
+      const settings = await window.NovelTtsDB.settings.get();
+      const body = {
+        model: opts.model || settings.analysisModel,
+        fallbackModelId: opts.fallbackModelId !== undefined
+          ? opts.fallbackModelId
+          : settings.fallbackAnalysisModel,
+        idea: opts.idea,
+        chapterCount: opts.chapterCount,
+        minChars: opts.minChars,
+        maxChars: opts.maxChars,
+        temperature: opts.temperature !== undefined ? opts.temperature : 0.8,
+        maxTokens: opts.maxTokens !== undefined ? opts.maxTokens : settings.maxTokens,
+        extraParams: opts.extraParams || {},
+      };
+      const response = await fetch(url('/generate-outline'), {
+        method: 'POST',
+        headers: buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        throw new Error('產生大綱失敗：' + (await readError(response)));
+      }
+      const json = await response.json();
+      return json.outline || '';
+    },
+
+    /**
+     * 生成單一章節正文。
+     *
+     * @param {object} opts {idea, chapterNumber, chapterCount, minChars, maxChars,
+     *                       outline, previousEnding, extra}
+     * @returns {Promise<{chapterNumber:number, content:string, charCount:number}>}
+     */
+    async generateChapter(opts) {
+      const settings = await window.NovelTtsDB.settings.get();
+      const body = {
+        model: opts.model || settings.analysisModel,
+        fallbackModelId: opts.fallbackModelId !== undefined
+          ? opts.fallbackModelId
+          : settings.fallbackAnalysisModel,
+        idea: opts.idea,
+        chapterNumber: opts.chapterNumber,
+        chapterCount: opts.chapterCount,
+        minChars: opts.minChars,
+        maxChars: opts.maxChars,
+        outline: opts.outline || null,
+        previousEnding: opts.previousEnding || null,
+        extra: opts.extra || null,
+        temperature: opts.temperature !== undefined ? opts.temperature : 0.8,
+        maxTokens: opts.maxTokens !== undefined ? opts.maxTokens : settings.maxTokens,
+        extraParams: opts.extraParams || {},
+      };
+      const response = await fetch(url('/generate-chapter'), {
+        method: 'POST',
+        headers: buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        throw new Error('生成章節失敗：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
     /** 列出可用語音模型。 */
     async models() {
       const response = await fetch(url('/models'), { headers: buildHeaders() });

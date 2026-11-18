@@ -182,6 +182,18 @@ public class PageController {
         return "segments";
     }
 
+    /**
+     * AI 生成小說頁。
+     *
+     * <p>訪客與登入者都能用：生成過程全部在瀏覽器端呼叫無狀態閘道，
+     * 歷史記錄存在 IndexedDB，server 端不保存任何生成內容。
+     */
+    @GetMapping("/generate")
+    public String generate(Model model) {
+        model.addAttribute("guestMode", isGuest());
+        return "generate";
+    }
+
     /** 使用說明頁：圖文逐步教學。訪客與登入者都能看。 */
     @GetMapping("/guide")
     public String guide(Model model) {

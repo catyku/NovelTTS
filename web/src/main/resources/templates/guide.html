@@ -15,6 +15,7 @@
   <nav>
     <a th:href="@{/}" href="/">儀表板</a>
     <a th:href="@{/novels}" href="/novels">小說</a>
+    <a th:href="@{/generate}" href="/generate">AI 生成</a>
     <a th:href="@{/groups}" href="/groups">群組</a>
     <a th:href="@{/settings}" href="/settings">設定</a>
     <a th:href="@{/guide}" href="/guide">使用說明</a>
@@ -66,6 +67,7 @@
     <h2>完整流程</h2>
     <ol>
       <li><a href="#step-try">先試試看：載入一份範例</a></li>
+      <li><a href="#step-generate">用 AI 產生小說</a></li>
       <li><a href="#step-key">設定你的 OpenRouter API Key</a></li>
       <li><a href="#step-import">匯入小說</a></li>
       <li><a href="#step-analyze">觸發 AI 分析</a></li>
@@ -132,6 +134,55 @@
       範例會存進你這台電腦的瀏覽器（跟一般作品一樣），
       但它的標題前面有「範例」字樣，方便你分辨。
       按「移除範例」可以只刪掉範例、不影響你自己做的作品。
+    </div>
+  </section>
+
+  <!-- ============ AI 生成 ============ -->
+  <section class="guide-step" id="step-generate">
+    <h2><span class="step-num">✎</span><span class="step-title">用 AI 產生小說</span></h2>
+
+    <p>
+      不想自己打字？到<strong>「AI 生成」</strong>頁，寫下你的想法，
+      設定章節數與每章的字數範圍，AI 就會逐章把故事寫出來。
+      寫完可以直接下載 TXT，或匯入成小說接著做語音合成。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/14-generate-form.png}" alt="AI 生成頁：想法、章節數與每章字數範圍">
+      <figcaption>
+        創作設定。除了想法之外，還能指定章節數、每章最少／最多字數，
+        以及額外指示（例如「多用短句，視角限制在主角」）。
+      </figcaption>
+    </figure>
+
+    <h3>三個可選的步驟</h3>
+    <ol>
+      <li><strong>產生大綱</strong>（可跳過）—— 先讓 AI 列出每章的標題與走向，
+          之後每一章都會帶著這份大綱生成，全書方向比較不會跑掉。</li>
+      <li><strong>開始生成</strong> —— 逐章呼叫 AI。每章都會把上一章的結尾帶進去，
+          所以劇情是連貫的，不會每章像各寫各的。</li>
+      <li><strong>取用成果</strong> —— 下載 TXT，或按「匯入為小說並前往語音合成」。</li>
+    </ol>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/15-generate-result.png}" alt="AI 生成結果：大綱、章節表格與歷史記錄">
+      <figcaption>
+        生成結果。上方是大綱，中間是各章的字數與預覽，
+        下方是生成歷史 —— 每筆都可以「查看」或「刪除」。
+      </figcaption>
+    </figure>
+
+    <div class="guide-callout">
+      <strong>中途中斷也不會白費。</strong>
+      每生成完一章就會存進瀏覽器，所以就算你按了「停止」，
+      已完成的章節仍然保留在歷史記錄裡，可以繼續下載或匯入。
+    </div>
+
+    <div class="guide-tip">
+      <strong>關於花費。</strong>
+      每章都是一次 AI 呼叫，章數越多費用越高。
+      建議先試 2–3 章確認方向，滿意後再往下生成。
+      生成歷史只存在你的瀏覽器裡，伺服器不會保存任何生成內容。
     </div>
   </section>
 
