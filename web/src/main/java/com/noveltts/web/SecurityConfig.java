@@ -66,6 +66,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/gateway/**").permitAll()
                         // 訪客模式的頁面：資料在瀏覽器，頁面本身不含任何使用者資料。
                         .requestMatchers("/", "/novels", "/novels/**", "/groups", "/settings").permitAll()
+                        // 使用說明頁與其截圖：公開的教學內容
+                        .requestMatchers("/guide", "/docs/**").permitAll()
+                        // 說明頁用的示範資料（產生截圖時用）
+                        .requestMatchers("/guide-demo/**").permitAll()
                         // 唯讀的共用預設值（音色庫、模型定價）：訪客模式的設定頁需要它們
                         // 來提供建議值，但回應內容不涉及任何使用者資料。
                         .requestMatchers(HttpMethod.GET, "/api/settings/voices").permitAll()

@@ -9,6 +9,15 @@
 
 ![訪客模式設定](docs/screenshots/10-settings-guest.png)
 
+## 使用說明
+
+完整的圖文操作說明在網站上：**[/guide](/guide)**（免登入即可瀏覽）。
+
+涵蓋：設定 API Key → 匯入小說 → AI 分析 → 語音合成 → 調整角色音色 →
+用群組讓音色跨集一致 → 合併下載 → 資料存在哪與如何備份，以及常見問題。
+
+![使用說明](docs/screenshots/guide-page.png)
+
 ## 這系統在做什麼
 
 ```

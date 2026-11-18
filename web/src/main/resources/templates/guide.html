@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>使用說明 — 小說語音合成系統</title>
+  <meta name="_csrf_token" th:content="${_csrf.token}">
+  <meta name="_csrf_header" content="X-CSRF-TOKEN">
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+  <link rel="stylesheet" th:href="@{/css/guide.css}">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">小說語音合成</span>
+  <nav>
+    <a th:href="@{/}" href="/">儀表板</a>
+    <a th:href="@{/novels}" href="/novels">小說</a>
+    <a th:href="@{/groups}" href="/groups">群組</a>
+    <a th:href="@{/settings}" href="/settings">設定</a>
+    <a th:href="@{/guide}" href="/guide">使用說明</a>
+    <a th:if="${!guestMode}" th:href="@{/do-change-password}" href="/do-change-password">帳號</a>
+  </nav>
+  <span class="spacer"></span>
+  <span class="muted" id="apiKeyState"></span>
+  <form method="post" th:action="@{/do-logout}" th:if="${!guestMode}">
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+    <button class="btn btn-sm" type="submit">登出</button>
+  </form>
+  <a class="btn btn-sm" th:if="${guestMode}" th:href="@{/login}" href="/login">登入</a>
+</header>
+<main>
+
+  <div class="guide-intro">
+    <h2>五分鐘做出你的第一本有聲書</h2>
+    <p>
+      把小說純文字丟進去，AI 會自動切章、判斷每句話是旁白還是角色說話、
+      挑選音色，再逐段合成語音。你會拿到每段音檔、每章合併檔，和整本的下載 ZIP。
+    </p>
+    <p>
+      <strong>不需要註冊，也不需要登入。</strong>
+      你的小說、角色與音檔全部存在這台電腦的瀏覽器裡，伺服器只做無狀態的 AI 運算，
+      不保存你的任何資料。唯一需要你自己準備的是一把 OpenRouter API Key。
+    </p>
+  </div>
+
+  <div class="guide-cards">
+    <div class="guide-card">
+      <h3><span class="num">1</span>準備一把 Key</h3>
+      <p>到 OpenRouter 註冊並建立 API Key，貼到「設定」頁。這把 Key 只存在你的瀏覽器裡。</p>
+    </div>
+    <div class="guide-card">
+      <h3><span class="num">2</span>匯入小說</h3>
+      <p>貼上內文或選文字檔。系統會依「第X章」標題自動切章，沒有標題就按字數切。</p>
+    </div>
+    <div class="guide-card">
+      <h3><span class="num">3</span>分析與合成</h3>
+      <p>按「觸發 AI 分析」辨識角色，再按「觸發語音合成」產生音檔。全程在你的瀏覽器。</p>
+    </div>
+    <div class="guide-card">
+      <h3><span class="num">4</span>下載成品</h3>
+      <p>合併本章、合併整本，或直接下載 ZIP（內含段落檔、章節檔與整本檔）。</p>
+    </div>
+  </div>
+
+  <div class="guide-toc">
+    <h2>完整流程</h2>
+    <ol>
+      <li><a href="#step-key">設定你的 OpenRouter API Key</a></li>
+      <li><a href="#step-import">匯入小說</a></li>
+      <li><a href="#step-analyze">觸發 AI 分析</a></li>
+      <li><a href="#step-synthesize">觸發語音合成</a></li>
+      <li><a href="#step-characters">調整角色音色</a></li>
+      <li><a href="#step-groups">用群組讓音色跨集一致</a></li>
+      <li><a href="#step-download">合併與下載</a></li>
+      <li><a href="#step-data">資料存在哪、如何備份</a></li>
+      <li><a href="#faq">常見問題</a></li>
+    </ol>
+  </div>
+
+  <!-- ============ 步驟 1 ============ -->
+  <section class="guide-step" id="step-key">
+    <h2><span class="step-num">1</span><span class="step-title">設定你的 OpenRouter API Key</span></h2>
+
+    <p>
+      分析與語音合成都由 OpenRouter 的模型完成，所以需要一把它的 API Key。
+      到 <code>openrouter.ai</code> 註冊後，在 Keys 頁建立一把 Key（需要先在額度頁加值或綁定付款方式）。
+    </p>
+
+    <p>
+      取得 Key 後打開<strong>設定</strong>頁，貼進「你的 API Key」欄位，按「儲存 API Key」。
+      想確認能不能用，可以直接按旁邊的「測試連線」。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/02-settings-key.png}" alt="設定頁：填入 OpenRouter API Key 的欄位">
+      <figcaption>設定頁上半部。Key 欄位是密碼輸入框，儲存後只顯示遮蔽值。</figcaption>
+    </figure>
+
+    <div class="guide-callout">
+      <strong>Key 會跑到哪裡？</strong>
+      儲存在瀏覽器的 <code>localStorage</code>，只在呼叫閘道時放在 HTTP 標頭
+      <code>X-OpenRouter-Key</code> 裡送出。伺服器只在「那一次請求」的記憶體中用它，
+      不寫入資料庫、不存檔、不記錄到 log。
+    </div>
+
+    <div class="guide-tip">
+      <strong>不想每次都貼？</strong>
+      同一台電腦的同一個瀏覽器會記住你的 Key。換電腦或清除瀏覽器資料就要重新貼一次。
+    </div>
+
+    <p>
+      設定頁下方還有「全站預設值」—— 這是系統提供的音色庫與模型建議值，
+      按「設為旁白」「設為預設」或「套用」就能套進你自己的設定。套用後存進你的瀏覽器，不影響其他人。
+    </p>
+  </section>
+
+  <!-- ============ 步驟 2 ============ -->
+  <section class="guide-step" id="step-import">
+    <h2><span class="step-num">2</span><span class="step-title">匯入小說</span></h2>
+
+    <p>
+      到<strong>小說</strong>頁，在「新增小說」區塊填入標題、作者與內文。
+      內文可以直接貼上，或按「從文字檔匯入」選一個 <code>.txt</code>。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/03-import.png}" alt="小說匯入表單：標題、作者、群組與內文">
+      <figcaption>匯入表單。內文可以直接貼上純文字。</figcaption>
+    </figure>
+
+    <h3>切章規則</h3>
+    <p>系統會自動辨識章節標題來切分：</p>
+    <table class="guide-table">
+      <tr><th>類型</th><th>範例</th></tr>
+      <tr><td>中文章節</td><td><code>第一章</code>、<code>第 12 回</code>、<code>第三节</code></td></tr>
+      <tr><td>英文章節</td><td><code>Chapter 1</code>、<code>CHAPTER IV</code></td></tr>
+      <tr><td>Markdown 標題</td><td><code>## 第一章</code></td></tr>
+      <tr><td>沒有標題</td><td>依字數上限自動切（預設 3000 字，可在設定頁調整）</td></tr>
+    </table>
+
+    <div class="guide-tip">
+      <strong>章節標題不會被念出來。</strong>
+      標題只存在章節名稱裡，不會混進內容變成旁白 —— 你不會聽到「第一章 夜歸」被唸一遍。
+    </div>
+
+    <p>
+      按「建立」後，系統會立刻切好章節並顯示在列表中。
+      <strong>所屬群組</strong>與<strong>集數順序</strong>先留空沒關係，
+      稍後想讓多集共用音色再回來指定（見步驟 6）。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/06-novels-list.png}" alt="小說列表：顯示標題、作者、狀態、章節數與字數">
+      <figcaption>匯入完成。清單會顯示每本小說的章節數與字數。</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 步驟 3 ============ -->
+  <section class="guide-step" id="step-analyze">
+    <h2><span class="step-num">3</span><span class="step-title">觸發 AI 分析</span></h2>
+
+    <p>
+      進入小說詳情頁，按<strong>「觸發 AI 分析」</strong>。
+      系統會逐章送去分析，判斷每一段是旁白（<code>NARRATION</code>）還是某個角色在說話
+      （<code>DIALOGUE</code>），並抽出情緒與語氣。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/07-analyzed.png}" alt="分析完成後的小說詳情頁">
+      <figcaption>分析完成。狀態變成 <code>ANALYZED</code>，每章列出段落數。</figcaption>
+    </figure>
+
+    <p>分析結果會建立角色清單。你可以到「角色音色」頁微調，詳見步驟 5。</p>
+
+    <div class="guide-callout">
+      <strong>原文會被保留嗎？</strong>
+      會。AI 只做「判定這句是誰說的、有什麼情緒」，不會摘要或改寫你的文字，
+      最多補上標點、拿掉對話引號。實際送去合成的就是原文。
+    </div>
+  </section>
+
+  <!-- ============ 步驟 4 ============ -->
+  <section class="guide-step" id="step-synthesize">
+    <h2><span class="step-num">4</span><span class="step-title">觸發語音合成</span></h2>
+
+    <p>
+      按<strong>「觸發語音合成」</strong>。系統會把相鄰的段落依說話者打包成
+      multi-speaker 請求，一次送出多個 turn —— 這比逐段呼叫快得多，音色切換也順。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/08-synthesized.png}" alt="語音合成完成">
+      <figcaption>語音合成完成。狀態變成 <code>READY</code>，章節合併檔也產生了。</figcaption>
+    </figure>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/09-audio-list.png}" alt="合成完成後的音檔清單">
+      <figcaption>
+        音檔清單。每個音檔都有時長、大小與實際使用的音色，可以直接在頁面上試聽。
+      </figcaption>
+    </figure>
+
+    <p>
+      音檔會存進你的瀏覽器（IndexedDB），所以重新整理頁面不會消失。
+      段落音檔顯示的「音色」欄就是這段實際用的 voice ID —— 可以拿它對照角色設定。
+    </p>
+
+    <div class="guide-tip">
+      <strong>合成要花多少時間？</strong>
+      大約每 10 秒文字需要 2–4 秒合成（視模型而定）。長篇小說建議分章進行，
+      系統會顯示「合成第 X/Y 章」的進度。
+    </div>
+  </section>
+
+  <!-- ============ 步驟 5 ============ -->
+  <section class="guide-step" id="step-characters">
+    <h2><span class="step-num">5</span><span class="step-title">調整角色音色</span></h2>
+
+    <p>
+      在小說詳情頁按「角色音色」進入。AI 會依角色在文中的出現頻率自動挑選音色，
+      你可以隨時改。手動改完記得按該列的「儲存」。
+    </p>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/10-characters.png}" alt="角色音色頁：每位角色的別名、音色與語氣指令">
+      <figcaption>
+        角色音色頁。「別名」用來比對不同集數裡同一個角色的不同稱呼；
+        「語氣指令」會直接影響 TTS 的表現。
+      </figcaption>
+    </figure>
+
+    <h3>語氣指令怎麼寫</h3>
+    <p>語氣指令是給 TTS 模型的具體指示，越具體越好。實測有效寫法：</p>
+    <table class="guide-table">
+      <tr><th>想要的感覺</th><th>指令範例</th></tr>
+      <tr><td>沉穩敘事</td><td><code>語氣沉穩，敘述節奏平緩</code></td></tr>
+      <tr><td>清冷疏離</td><td><code>語氣清冷，語速偏慢</code></td></tr>
+      <tr><td>低沉話少</td><td><code>語氣低沉，話少，帶點冷幽默</code></td></tr>
+    </table>
+
+    <div class="guide-callout">
+      <strong>語氣指令不是裝飾。</strong>
+      實測（同一個 voice ID，量測音量與時長的變異率）：
+      沒有 instructions 時音量變異 9.3%、時長變異 6.2%；
+      有 instructions 時音量變異降到 1.2%、時長變異 4.7% —— 約 3.5 倍的穩定度改善。
+      這是跨集音色一致性的關鍵。
+    </div>
+
+    <p>
+      頁面上方還有「自動指派音色」按鈕，會把語氣出現最多的角色依序配給不同的音色，
+      適合還沒決定要分配誰的時候。
+    </p>
+  </section>
+
+  <!-- ============ 步驟 6 ============ -->
+  <section class="guide-step" id="step-groups">
+    <h2><span class="step-num">6</span><span class="step-title">用群組讓音色跨集一致</span></h2>
+
+    <p>
+      同一本連載小說常常分好幾十集慢慢出版。如果每一集單獨分析，同一個角色會拿到不同音色，
+      聽起來像換了配音員。<strong>群組</strong>就是為了解決這件事。
+    </p>
+
+    <ol>
+      <li>到<strong>群組</strong>頁建立群組（例如「燈火重亮」）。</li>
+      <li>展開群組，設定<strong>旁白音色</strong>與<strong>旁白語氣</strong>（跨集共用）。</li>
+      <li>在「共用角色」新增每一位角色：名稱、別名、音色、語氣。</li>
+      <li>回到<strong>小說</strong>頁，把每一集匯入時的「所屬群組」指到這個群組。</li>
+    </ol>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/04-group-form.png}" alt="群組列表">
+      <figcaption>群組列表。同一本連載小說的各集都會歸到同一個群組下。</figcaption>
+    </figure>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/05-group-characters.png}" alt="群組的共用角色設定">
+      <figcaption>
+        群組的共用角色。別名用逗號分隔，比對各集角色名時會一併使用 ——
+        設定「晚晚,小林」後，即使某集 AI 把角色叫成「晚晚」也能對上。
+      </figcaption>
+    </figure>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/12-group-members.png}" alt="群組的成員小說清單">
+      <figcaption>群組的成員小說。集數越多，共用角色與旁白的一致性越重要。</figcaption>
+    </figure>
+
+    <h3>實測結果</h3>
+    <p>兩集各自獨立分析，群組的共用角色自動套用：</p>
+    <table class="guide-table">
+      <tr><th>集數</th><th>角色</th><th>套用音色</th><th>套用語氣</th></tr>
+      <tr><td>第一集</td><td>林晚</td><td>Aoede</td><td>語氣清冷，語速偏慢</td></tr>
+      <tr><td>第一集</td><td>陳硯</td><td>Charon</td><td>語氣低沉，話少，帶點冷幽默</td></tr>
+      <tr><td>第二集</td><td>林晚</td><td>Aoede</td><td>語氣清冷，語速偏慢</td></tr>
+      <tr><td>第二集</td><td>陳硯</td><td>Charon</td><td>語氣低沉，話少，帶點冷幽默</td></tr>
+    </table>
+
+    <p>
+      注意「套用音色」欄：第二集的 AI 是獨立分析的，卻自動對上了群組裡的設定，
+      連語氣指令都一樣。
+    </p>
+  </section>
+
+  <!-- ============ 步驟 7 ============ -->
+  <section class="guide-step" id="step-download">
+    <h2><span class="step-num">7</span><span class="step-title">合併與下載</span></h2>
+
+    <p>合成完之後有三種取得成品的方式：</p>
+
+    <table class="guide-table">
+      <tr><th>動作</th><th>在哪裡</th><th>產出</th></tr>
+      <tr><td>合併本章</td><td>段落與音檔頁</td><td>把本章所有段落音檔接成一個 MP3</td></tr>
+      <tr><td>合併整本</td><td>小說詳情頁</td><td>把所有章節音檔接成整本 MP3</td></tr>
+      <tr><td>下載 ZIP</td><td>小說詳情頁</td><td>內含段落檔、章節檔與整本檔</td></tr>
+    </table>
+
+    <div class="guide-tip">
+      <strong>合併與打包在哪裡做？</strong>
+      在伺服器端（需要 ffmpeg 做音檔合併），但同樣是無狀態的：
+      伺服器收位元組、合併、回傳，不留任何檔案。
+      這樣你的瀏覽器不用載入 30MB 的 ffmpeg.wasm。
+    </div>
+  </section>
+
+  <!-- ============ 步驟 8 ============ -->
+  <section class="guide-step" id="step-data">
+    <h2><span class="step-num">8</span><span class="step-title">資料存在哪、如何備份</span></h2>
+
+    <p>這個系統的資料分布是這樣的：</p>
+    <table class="guide-table">
+      <tr><th>資料</th><th>放在哪</th></tr>
+      <tr><td>小說內文、章節、角色、段落</td><td>你的瀏覽器 IndexedDB</td></tr>
+      <tr><td>音檔（MP3）</td><td>你的瀏覽器 IndexedDB</td></tr>
+      <tr><td>群組設定、音色指派</td><td>你的瀏覽器 IndexedDB</td></tr>
+      <tr><td>OpenRouter API Key</td><td>你的瀏覽器 localStorage</td></tr>
+      <tr><td>伺服器</td><td><strong>不保存你的任何資料</strong></td></tr>
+      <tr><td>伺服器（共用）</td><td>音色庫、模型清單、模型定價 —— 建議值而已</td></tr>
+    </table>
+
+    <h3>備份</h3>
+    <p>
+      到<strong>設定</strong>頁最下方按「匯出我的資料」，會下載一個 JSON 檔，
+      內含你的小說、角色、群組與設定（<strong>不含音檔，也不含 API Key</strong>）。
+    </p>
+
+    <div class="guide-callout">
+      <strong>清除瀏覽器資料 = 作品消失。</strong>
+      因為資料只存在你的電腦上，無痕模式或清除網站資料都會刪掉它。
+      重要的作品請記得用「匯出我的資料」備份。
+    </div>
+
+    <h3>容量限制</h3>
+    <p>
+      瀏覽器給網站儲存空間通常是數百 MB 到數 GB。一本長篇小說加上全部音檔
+      （一小時音頻約 50MB）可能就會逼近上限。音檔過多時，建議合成完就下載 ZIP，
+      再從設定頁清除資料。
+    </p>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section class="guide-step" id="faq">
+    <h2><span class="step-num">?</span><span class="step-title">常見問題</span></h2>
+
+    <div class="guide-faq">
+      <details>
+        <summary>為什麼不用註冊就能用？</summary>
+        <p>
+          因為伺服器不需要記住你是誰。你的資料全在瀏覽器，伺服器只是個「AI 運算閘道」——
+          收到請求、呼叫 OpenRouter、回傳結果，連你的 Key 都不保存。
+          這樣一來伺服器端沒有你的資料可漏，公開服務的隱私風險也就低很多。
+        </p>
+      </details>
+
+      <details>
+        <summary>那我登入帳號有什麼用？</summary>
+        <p>
+          帳號模式是選用功能，目前能讓你把作品存到伺服器資料庫（跨裝置）。
+          但要提醒：<strong>訪客模式的資料不會自動同步到帳號</strong>，兩邊目前是各自獨立的。
+          登入後看到的是另一套（較舊的）介面。
+        </p>
+      </details>
+
+      <details>
+        <summary>換電腦怎麼辦？</summary>
+        <p>
+          訪客模式的資料跟著瀏覽器走，換電腦就沒了。兩種做法：
+          在舊電腦用「匯出我的資料」備份 JSON（不含音檔），或登入帳號模式存到伺服器。
+        </p>
+      </details>
+
+      <details>
+        <summary>音檔聽起來怪怪的／語速不對？</summary>
+        <p>
+          優先調整角色的「語氣指令」—— 那是影響最大的因素。
+          其次檢查「全域語氣」（設定頁），它會套用到所有沒特別指定角色的段落。
+          也可以在段落頁個別重跑某一段。
+        </p>
+      </details>
+
+      <details>
+        <summary>某個角色被念成別人的聲音？</summary>
+        <p>
+          這通常表示兩個角色被配到同一個音色。到角色頁用「自動指派音色」讓它們分開，
+          或手動指定不同音色後按「儲存」，再重跑受影響的段落。
+        </p>
+      </details>
+
+      <details>
+        <summary>會不會把我的內容送到第三方？</summary>
+        <p>
+          會，這是這類工具的本質：分析與合成的內容必然要送到 OpenRouter 的模型才能運算。
+          差別在於伺服器<strong>不保留</strong> —— 請求處理完就結束，沒有資料庫紀錄、沒有 log。
+          但 OpenRouter 那端的處理則不在本系統的控制範圍內。
+        </p>
+      </details>
+
+      <details>
+        <summary>分析失敗或合成失敗怎麼辦？</summary>
+        <p>
+          先按「測試連線」確認 Key 有效、額度充足。Key 無效會明確提示
+          「OpenRouter API Key 無效或尚未設定」。額度用盡會回 429。
+          其他狀況請看該頁的紅色錯誤訊息。
+        </p>
+      </details>
+
+      <details>
+        <summary>可以呼叫一次處理很長的小說嗎？</summary>
+        <p>
+          可以，但會分章送出。若單一章節很長（沒有章節標題時），可以在設定頁把
+          「章節字數上限」調小，讓切分更細、進度更明顯。
+        </p>
+      </details>
+    </div>
+
+    <div class="guide-tip" style="margin-top:24px">
+      <strong>還是卡住？</strong>
+      系統的公開 API 是無狀態的，可以直接用 curl 呼叫：
+      <code>POST /api/gateway/analyze</code>（帶 <code>X-OpenRouter-Key</code> 標頭）。
+      詳細格式見 README 的「對外 API：無狀態 AI 閘道」章節。
+    </div>
+  </section>
+
+</main>
+<script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/db.js}"></script>
+<script>
+/* 導覽列右側顯示 Key 狀態 */
+(function () {
+  const state = document.getElementById('apiKeyState');
+  if (!state || !window.NovelTtsDB) return;
+  state.textContent = window.NovelTtsDB.credentials.has()
+    ? 'OpenRouter Key：' + window.NovelTtsDB.credentials.masked()
+    : '尚未設定 OpenRouter Key';
+})();
+</script>
+</body>
+</html>

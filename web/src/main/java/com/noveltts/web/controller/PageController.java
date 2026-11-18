@@ -182,6 +182,13 @@ public class PageController {
         return "segments";
     }
 
+    /** 使用說明頁：圖文逐步教學。訪客與登入者都能看。 */
+    @GetMapping("/guide")
+    public String guide(Model model) {
+        model.addAttribute("guestMode", isGuest());
+        return "guide";
+    }
+
     @GetMapping("/settings")
     public String settings(Model model) {
         model.addAttribute("voices", voiceRepository.findAllByOrderBySortOrderAscDisplayNameAsc());

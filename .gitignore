@@ -13,6 +13,9 @@ output/
 node_modules/
 package-lock.json
 
+# 產生說明頁截圖時用的暫存示範資料（可由 tools/gateway-test/guide-data.js 重建）
+web/src/main/resources/static/guide-demo/
+
 # npx skills 安裝的第三方 skill（已裝到 ~/.hermes/skills/，不進版控）
 .agents/
 skills-lock.json
