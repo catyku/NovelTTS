@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>段落與音檔 — 小說語音合成系統</title>
   <meta name="_csrf_token" th:content="${_csrf.token}">
-  <meta name="_novel_id" th:content="${novel.id}">
+  <meta name="_novel_id" th:content="${novel != null ? novel.id : ''}">
+  <meta name="_guest_mode" th:content="${guestMode}">
   <meta name="_csrf_header" content="X-CSRF-TOKEN">
   <link rel="stylesheet" th:href="@{/css/app.css}">
 </head>
@@ -28,21 +29,19 @@
 <main>
   <h1>段落與音檔</h1>
   <p class="muted">
-    <a th:href="@{/novels/{id}(id=${novel.id})}" th:text="${novel.title}"></a>
+    <a id="novelTitle" href="#">小說</a>
   </p>
 
   <div class="panel">
     <label>章節
-      <select id="chapterSelect" onchange="location.href = this.value">
-        <option th:each="ch : ${chapters}"
-                th:value="@{/novels/{id}/segments(id=${novel.id},chapterId=${ch.id})}"
-                th:text="'第 ' + ${ch.chapterIndex} + ' 章 ' + ${ch.displayTitle}"
-                th:selected="${ch.id == selectedChapterId}"></option>
+      <select id="chapterSelect">
+        <option value="">（尚無章節）</option>
       </select>
     </label>
     <button class="btn btn-primary" id="synthAllBtn">合成本章待處理段落</button>
     <button class="btn" id="mergeChapterBtn">合併本章</button>
     <span id="msg" class="muted"></span>
+    <div id="jobBox" style="margin-top:12px"></div>
   </div>
 
   <div class="panel">
@@ -53,43 +52,16 @@
         <th>情緒</th><th>語氣</th><th>音色</th><th>狀態</th><th>播放</th><th></th>
       </tr>
       </thead>
-      <tbody>
-      <tr th:each="s : ${segments}">
-        <td th:text="${s.seq}"></td>
-        <td><span class="badge" th:classappend="${s.type}" th:text="${s.type}"></span></td>
-        <td th:text="${s.speakerName}"></td>
-        <td style="max-width:420px">
-          <div th:text="${s.text}"></div>
-          <input type="text" class="seg-text" th:value="${s.text}"
-                 th:attr="data-segment-id=${s.id}" placeholder="編輯文字">
-        </td>
-        <td th:text="${s.emotion} ?: '-'"></td>
-        <td th:text="${s.styleHint} ?: '-'"></td>
-        <td>
-          <select class="seg-voice" th:attr="data-segment-id=${s.id}">
-            <option value="">（沿用角色）</option>
-            <option th:each="v : ${voices}" th:value="${v.voiceId}"
-                    th:text="${v.displayName}"
-                    th:selected="${s.voiceId != null && s.voiceId == v.voiceId}"></option>
-          </select>
-        </td>
-        <td><span class="badge" th:classappend="${s.ttsStatus}" th:text="${s.ttsStatus}"></span></td>
-        <td th:if="${s.audioUrl != null}">
-          <audio controls th:src="@{${s.audioUrl}}"></audio>
-        </td>
-        <td th:if="${s.audioUrl == null}">-</td>
-        <td>
-          <button class="btn btn-sm save-seg" th:attr="data-segment-id=${s.id}">儲存</button>
-          <button class="btn btn-sm synth-seg" th:attr="data-segment-id=${s.id}">重跑</button>
-        </td>
-      </tr>
-      <tr th:if="${#lists.isEmpty(segments)}"><td colspan="10" class="muted">本章尚無段落，請先執行 AI 分析</td></tr>
-      </tbody>
+      <tbody id="segRows"></tbody>
     </table>
   </div>
 </main>
 
 <script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/db.js}"></script>
+<script th:src="@{/js/logic.js}"></script>
+<script th:src="@{/js/gateway.js}"></script>
+<script th:src="@{/js/pipeline.js}"></script>
 <script th:src="@{/js/segments.js}"></script>
 </body>
 </html>

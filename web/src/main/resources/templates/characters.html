@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>角色音色 — 小說語音合成系統</title>
   <meta name="_csrf_token" th:content="${_csrf.token}">
-  <meta name="_novel_id" th:content="${novel.id}">
+  <meta name="_novel_id" th:content="${novel != null ? novel.id : ''}">
+  <meta name="_guest_mode" th:content="${guestMode}">
   <meta name="_csrf_header" content="X-CSRF-TOKEN">
   <link rel="stylesheet" th:href="@{/css/app.css}">
 </head>
@@ -28,8 +29,8 @@
 <main>
   <h1>角色音色</h1>
   <p class="muted">
-    <a th:href="@{/novels/{id}(id=${novel.id})}" th:text="${novel.title}"></a> ·
-    <span th:text="${#lists.size(characters)} + ' 個角色'"></span>
+    <a id="novelTitle" href="#">小說</a> ·
+    <span id="charCount">0 個角色</span>
   </p>
 
   <div class="panel">
@@ -45,39 +46,16 @@
         <th>音色</th><th>語氣指令</th><th>段落</th><th></th>
       </tr>
       </thead>
-      <tbody>
-      <tr th:each="c : ${characters}">
-        <td>
-          <span class="voice-chip" th:style="'background:' + ${c.colorHex}"></span>
-          <strong th:text="${c.name}"></strong>
-          <div class="muted" th:text="${c.description} ?: ''"></div>
-        </td>
-        <td class="muted" th:text="${#strings.listJoin(c.aliases, ', ')}"></td>
-        <td th:text="${c.gender} ?: '-'"></td>
-        <td th:text="${c.ageGroup} ?: '-'"></td>
-        <td th:text="${c.personality} ?: '-'"></td>
-        <td>
-          <select class="voice-select" th:attr="data-character-id=${c.id}">
-            <option value="0">（未指定）</option>
-            <option th:each="v : ${voices}" th:value="${v.id}"
-                    th:text="${v.displayName} + ' (' + ${v.voiceId} + ')'"
-                    th:selected="${c.ttsVoice != null && c.ttsVoice.id == v.id}"></option>
-          </select>
-        </td>
-        <td>
-          <input type="text" class="instr-input" th:value="${c.ttsInstructions}"
-                 th:attr="data-character-id=${c.id}" placeholder="例如：語氣明亮">
-        </td>
-        <td th:text="${c.segmentCount}"></td>
-        <td><button class="btn btn-sm save-char" th:attr="data-character-id=${c.id}">儲存</button></td>
-      </tr>
-      <tr th:if="${#lists.isEmpty(characters)}"><td colspan="9" class="muted">尚未分析出角色</td></tr>
-      </tbody>
+      <tbody id="charRows"></tbody>
     </table>
   </div>
 </main>
 
 <script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/db.js}"></script>
+<script th:src="@{/js/logic.js}"></script>
+<script th:src="@{/js/gateway.js}"></script>
+<script th:src="@{/js/pipeline.js}"></script>
 <script th:src="@{/js/characters.js}"></script>
 </body>
 </html>

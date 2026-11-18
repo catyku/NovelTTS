@@ -30,6 +30,10 @@
     群組代表同一本連載小說。共用角色與旁白音色設在群組層級，各集分析時會自動套用，
     讓同一角色與旁白在所有集之間音色一致。
   </p>
+  <p class="muted">
+    群組、共用角色與成員小說的關聯都存在<strong>你的瀏覽器</strong>（IndexedDB），
+    伺服器不會保存這些資料；離開這個瀏覽器就看不到，除非你自行匯出備份。
+  </p>
 
   <div class="panel">
     <h2>新增群組</h2>
@@ -86,9 +90,21 @@
       <thead><tr><th>角色</th><th>別名</th><th>音色</th><th>語氣</th><th></th></tr></thead>
       <tbody id="charRows"></tbody>
     </table>
+
+    <h2>成員小說</h2>
+    <p class="muted">
+      屬於這個群組的小說（在「小說」頁匯入時指定群組）。集數越多，共用角色與旁白的一致性越重要。
+    </p>
+    <table>
+      <thead><tr><th>名稱</th><th>作者</th><th>集數</th></tr></thead>
+      <tbody id="memberRows"></tbody>
+    </table>
   </div>
 </main>
 
+<script th:src="@{/js/db.js}"></script>
+<script th:src="@{/js/logic.js}"></script>
+<script th:src="@{/js/gateway.js}"></script>
 <script th:src="@{/js/common.js}"></script>
 <script th:src="@{/js/groups.js}"></script>
 </body>

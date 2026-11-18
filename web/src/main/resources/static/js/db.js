@@ -300,7 +300,7 @@
     },
   };
 
-  global.NovelTtsDB = {
+  window.NovelTtsDB = {
     store: store,
     settings: settings,
     credentials: credentials,
@@ -319,7 +319,7 @@
     },
     /** 匯出成可下載的 JSON（不含音檔與 API Key）。 */
     async exportJson() {
-      const data = await global.NovelTtsDB.exportAll();
+      const data = await window.NovelTtsDB.exportAll();
       return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     },
     /** 清空所有資料。 */

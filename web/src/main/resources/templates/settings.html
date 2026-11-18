@@ -26,30 +26,40 @@
 </header>
 <main>
   <h1>設定</h1>
+  <p class="muted">
+    這是訪客模式：你用自己的 OpenRouter API Key，小說與設定資料全部存在你的瀏覽器。
+    伺服器只提供無狀態的 AI 運算，不保存你的任何資料。
+  </p>
 
-  <h2>AI Provider</h2>
+  <h2>你的 OpenRouter API Key</h2>
   <div class="panel">
+    <p class="muted">
+      貼上你自己的 OpenRouter API Key，分析章節與語音合成都會用這把 Key。
+      Key 只存在這台電腦這個瀏覽器的 localStorage，呼叫時隨請求標頭帶給閘道，
+      伺服器不會寫入資料庫或保存。
+    </p>
     <div class="row">
-      <label>名稱<input type="text" id="pName" value="OpenRouter"></label>
+      <label>你的 API Key<input type="password" id="pApiKey" placeholder="sk-or-v1-…（貼上後按「儲存 API Key」）"></label>
       <label>Base URL<input type="text" id="pBaseUrl" value="https://openrouter.ai/api/v1"></label>
     </div>
-    <div class="row">
-      <label>API Key<input type="password" id="pApiKey" placeholder="留空代表不變更"></label>
-      <label>逾時秒數<input type="number" id="pTimeout" value="120"></label>
-    </div>
-    <label>額外 Header（JSON）<textarea id="pHeaders" style="min-height:80px">{"HTTP-Referer": "http://localhost:8080", "X-Title": "novel-tts"}</textarea></label>
-    <label class="row">
-      <span><input type="checkbox" id="pEnabled" checked> 啟用</span>
-      <span><input type="checkbox" id="pDefault" checked> 設為預設</span>
-    </label>
-    <button class="btn btn-primary" id="saveProvider">儲存 Provider</button>
+    <button class="btn btn-primary" id="saveProvider">儲存 API Key</button>
     <button class="btn" id="testProvider">測試連線</button>
+    <button class="btn btn-danger" id="removeKeyBtn">移除 Key</button>
     <span id="providerMsg" class="muted"></span>
     <div id="providerList" style="margin-top:12px"></div>
   </div>
 
-  <h2>模型</h2>
+  <h2>全站預設值</h2>
   <div class="panel">
+    <p class="muted">
+      下面是全站共用的建議值（音色庫與模型），你可以在自己的設定中一鍵套用。
+      套用後會存進你的瀏覽器，不會影響其他人。
+    </p>
+
+    <h3>共用音色庫</h3>
+    <div id="voiceList" style="margin-top:12px"></div>
+
+    <h3>共用模型預設值</h3>
     <div class="row">
       <label>用途
         <select id="mPurpose">
@@ -57,60 +67,65 @@
           <option value="TTS">合成（audio/speech）</option>
         </select>
       </label>
-      <label>模型 ID<input type="text" id="mModelId" placeholder="google/gemini-3-flash"></label>
-      <label>備援模型 ID<input type="text" id="mFallbackModelId" placeholder="留空表示不啟用"></label>
+    </div>
+    <div id="modelList" style="margin-top:12px"></div>
+  </div>
+
+  <h2>你的模型</h2>
+  <div class="panel">
+    <p class="muted">
+      這些是你的 AI 模型設定，存在你的瀏覽器。留空表示不啟用備援模型。
+    </p>
+    <div class="row">
+      <label>分析模型 ID<input type="text" id="mModelId" placeholder="google/gemini-3-flash-preview"></label>
+      <label>備援分析模型 ID<input type="text" id="mFallbackModelId" placeholder="留空表示不啟用"></label>
+    </div>
+    <div class="row">
+      <label>TTS 模型 ID<input type="text" id="mTtsModel" placeholder="google/gemini-3.8-flash-tts"></label>
+      <label>備援 TTS 模型 ID<input type="text" id="mFallbackTtsModel" placeholder="留空表示不啟用"></label>
     </div>
     <div class="row">
       <label>Temperature<input type="number" step="0.1" id="mTemperature" value="0.2"></label>
       <label>Max Tokens<input type="number" id="mMaxTokens" value="8000"></label>
     </div>
-    <label>額外參數（JSON）<textarea id="mParams" style="min-height:60px">{}</textarea></label>
-    <label class="row">
-      <span><input type="checkbox" id="mEnabled" checked> 啟用</span>
-      <span><input type="checkbox" id="mDefault" checked> 設為預設</span>
-    </label>
-    <button class="btn btn-primary" id="saveModel">儲存模型</button>
+    <button class="btn btn-primary" id="saveModel">儲存模型設定</button>
     <span id="modelMsg" class="muted"></span>
-    <div id="modelList" style="margin-top:12px"></div>
   </div>
 
-  <h2>音色庫</h2>
-  <div class="panel">
-    <div class="row">
-      <label>模型 ID<input type="text" id="vModel" value="google/gemini-3.8-flash-tts"></label>
-      <label>voice_id<input type="text" id="vVoiceId" placeholder="Kore"></label>
-    </div>
-    <div class="row">
-      <label>顯示名稱<input type="text" id="vDisplayName" placeholder="穩健女性"></label>
-      <label>性別<input type="text" id="vGender" placeholder="female"></label>
-      <label>語言<input type="text" id="vLanguage" placeholder="zh-TW"></label>
-      <label>排序<input type="number" id="vSortOrder" value="0"></label>
-    </div>
-    <label>風格描述<input type="text" id="vStyleDesc" placeholder="沉穩、敘事感"></label>
-    <button class="btn btn-primary" id="saveVoice">新增音色</button>
-    <button class="btn" id="syncVoices">從 OpenRouter 同步音色</button>
-    <span id="voiceMsg" class="muted"></span>
-    <div id="voiceList" style="margin-top:12px"></div>
-  </div>
-
-  <h2>一般設定</h2>
+  <h2>全域參數</h2>
   <div class="panel">
     <label>全域語氣指令<input type="text" id="gGlobalInstructions"></label>
     <div class="row">
-      <label>旁白音色 voice_id<input type="text" id="gNarratorVoice"></label>
-      <label>預設音色 voice_id<input type="text" id="gDefaultVoice"></label>
+      <label>旁白音色<select id="gNarratorVoice"></select></label>
+      <label>預設音色<select id="gDefaultVoice"></select></label>
     </div>
     <div class="row">
       <label>章節切分字數上限<input type="number" id="gChapterMaxChars"></label>
-      <label>TTS 併發數<input type="number" id="gTtsConcurrency"></label>
       <label>TTS group 字數上限<input type="number" id="gTtsGroupMaxChars"></label>
     </div>
-    <label><input type="checkbox" id="gAutoAssignVoice"> 自動指派音色</label>
     <button class="btn btn-primary" id="saveGeneral">儲存一般設定</button>
     <span id="generalMsg" class="muted"></span>
   </div>
+
+  <h2>資料管理</h2>
+  <div class="panel">
+    <p class="muted">
+      你的小說、章節、角色、段落、音檔、群組與設定都只存在這個瀏覽器裡，
+      清除瀏覽器資料或換一台裝置就會不見。重要資料請自行匯出備份。
+    </p>
+    <button class="btn" id="exportData">匯出我的資料</button>
+    <button class="btn btn-danger" id="clearData">清除全部資料</button>
+    <span id="dataMsg" class="muted"></span>
+    <p class="muted">
+      匯出格式為 JSON，包含小說、群組與設定；
+      <strong>音檔（MP3 Blob）不包含在 JSON 匯出內</strong>，需要另外下載保存。
+    </p>
+  </div>
 </main>
 
+<script th:src="@{/js/db.js}"></script>
+<script th:src="@{/js/logic.js}"></script>
+<script th:src="@{/js/gateway.js}"></script>
 <script th:src="@{/js/common.js}"></script>
 <script th:src="@{/js/settings.js}"></script>
 </body>

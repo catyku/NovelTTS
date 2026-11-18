@@ -85,7 +85,7 @@ public class AudioApiController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("audio/" + audio.getFormat()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + audio.getFileName() + "\"")
+                        com.noveltts.web.ContentDisposition.inline(audio.getFileName()))
                 .body(resource);
     }
 
@@ -170,7 +170,7 @@ public class AudioApiController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + target.getFileName() + "\"")
+                        com.noveltts.web.ContentDisposition.attachment(target.getFileName().toString()))
                 .body(resource);
     }
 

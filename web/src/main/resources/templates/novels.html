@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>小說列表 — 小說語音合成系統</title>
   <meta name="_csrf_token" th:content="${_csrf.token}">
+  <meta name="_guest_mode" th:content="${guestMode}">
   <meta name="_csrf_header" content="X-CSRF-TOKEN">
   <link rel="stylesheet" th:href="@{/css/app.css}">
 </head>
@@ -50,6 +51,7 @@
     <label>內文
       <textarea id="content" placeholder="貼上小說全文。系統會自動依「第一章」「Chapter 1」等標題切分章節。"></textarea>
     </label>
+    <button class="btn btn-sm" id="pickFileBtn" type="button">從文字檔匯入</button>
     <button class="btn btn-primary" id="createBtn">建立</button>
     <span id="createMsg" class="muted"></span>
   </div>
@@ -63,6 +65,10 @@
 </main>
 
 <script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/db.js}"></script>
+<script th:src="@{/js/logic.js}"></script>
+<script th:src="@{/js/gateway.js}"></script>
+<script th:src="@{/js/pipeline.js}"></script>
 <script th:src="@{/js/novels.js}"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.web.filter.ForwardedHeaderFilter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -63,6 +64,14 @@ public class SecurityConfig {
                         // 無狀態 AI 閘道：使用者自帶 OpenRouter Key，不需要帳號。
                         // 閘道不讀寫任何使用者資料，呼叫次數由 GatewayRateLimitFilter 限制。
                         .requestMatchers("/api/gateway/**").permitAll()
+                        // 訪客模式的頁面：資料在瀏覽器，頁面本身不含任何使用者資料。
+                        .requestMatchers("/", "/novels", "/novels/**", "/groups", "/settings").permitAll()
+                        // 唯讀的共用預設值（音色庫、模型定價）：訪客模式的設定頁需要它們
+                        // 來提供建議值，但回應內容不涉及任何使用者資料。
+                        .requestMatchers(HttpMethod.GET, "/api/settings/voices").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/settings/models").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/settings/pricing").permitAll()
+                        // 其餘 API 仍需登入：那是「帳號模式」的後端，會讀寫資料庫。
                         .anyRequest().authenticated())
                 // 閘道是無狀態 API：以 X-OpenRouter-Key 標頭驗證，不依賴 cookie，
                 // 因此不需要 CSRF token。放行這條路徑的 CSRF 檢查。

@@ -31,11 +31,11 @@
   /** 建立帶有 API Key 的請求。 */
   function buildHeaders(extra) {
     const headers = Object.assign({}, extra || {});
-    const key = global.NovelTtsDB.credentials.get();
+    const key = window.NovelTtsDB.credentials.get();
     if (key) {
       headers['X-OpenRouter-Key'] = key;
     }
-    const baseUrl = global.NovelTtsDB.credentials.getBaseUrl();
+    const baseUrl = window.NovelTtsDB.credentials.getBaseUrl();
     if (baseUrl) {
       headers['X-OpenRouter-Base-Url'] = baseUrl;
     }
@@ -60,7 +60,7 @@
      * @returns {Promise<{segments: Array}>}
      */
     async analyze(opts) {
-      const settings = await global.NovelTtsDB.settings.get();
+      const settings = await window.NovelTtsDB.settings.get();
       const body = {
         model: opts.model || settings.analysisModel,
         fallbackModelId: opts.fallbackModelId !== undefined
@@ -90,7 +90,7 @@
      * @returns {Promise<Blob>}
      */
     async synthesize(turns, opts) {
-      const settings = await global.NovelTtsDB.settings.get();
+      const settings = await window.NovelTtsDB.settings.get();
       const body = {
         model: (opts && opts.model) || settings.ttsModel,
         fallbackModelId: (opts && opts.fallbackModelId !== undefined)
@@ -121,6 +121,61 @@
       return response.json();
     },
 
+    /**
+     * 合併多個 MP3 → 合併後的 MP3 Blob。
+     *
+     * 合併需要 ffmpeg，搬到瀏覽器要 30MB 的 wasm，因此放在 server 端做。
+     * server 是無狀態的：收到位元組、合併、回傳，不保留任何檔案。
+     *
+     * @param {Array<{blob: Blob, name: string}>} items
+     */
+    async merge(items) {
+      if (!items || !items.length) {
+        throw new Error('沒有可合併的音檔');
+      }
+      const form = new FormData();
+      items.forEach((it, i) => {
+        form.append('files', it.blob, it.name || ('part' + i + '.mp3'));
+      });
+      const response = await fetch(url('/merge'), {
+        method: 'POST',
+        headers: buildHeaders(),
+        body: form,
+      });
+      if (!response.ok) {
+        throw new Error('合併失敗：' + (await readError(response)));
+      }
+      return response.blob();
+    },
+
+    /**
+     * 把多個檔案打包成 ZIP → ZIP Blob。
+     *
+     * @param {Array<{blob: Blob, name: string}>} items
+     * @param {string} archiveName ZIP 檔名（不含副檔名）
+     */
+    async zip(items, archiveName) {
+      if (!items || !items.length) {
+        throw new Error('沒有可打包的檔案');
+      }
+      const form = new FormData();
+      items.forEach((it, i) => {
+        form.append('files', it.blob, it.name || ('file' + i));
+      });
+      if (archiveName) {
+        form.append('name', archiveName);
+      }
+      const response = await fetch(url('/zip'), {
+        method: 'POST',
+        headers: buildHeaders(),
+        body: form,
+      });
+      if (!response.ok) {
+        throw new Error('打包失敗：' + (await readError(response)));
+      }
+      return response.blob();
+    },
+
     /** 測試 provider 連線。 */
     async test() {
       const response = await fetch(url('/test'), {
@@ -137,5 +192,5 @@
 
   gateway.setApiBase = setApiBase;
   gateway.getApiBase = () => API_BASE;
-  global.NovelTtsGateway = gateway;
+  window.NovelTtsGateway = gateway;
 })(window);

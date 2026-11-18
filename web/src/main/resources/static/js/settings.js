@@ -1,219 +1,356 @@
-/* 設定頁 */
-async function loadProviders() {
+/* 設定頁（訪客模式）
+ *
+ * - 使用者自帶 OpenRouter API Key：存在瀏覽器 localStorage（NovelTtsDB.credentials），
+ *   呼叫無狀態 AI 閘道時以標頭帶上，伺服器不保存。
+ * - 自己的模型與全域參數：存在瀏覽器 IndexedDB（NovelTtsDB.settings）。
+ * - 全站預設值：從 server 的公開唯讀 API（/api/settings/voices、/api/settings/models）
+ *   讀取，作為建議值來源，使用者可一鍵套用。
+ * - 資料匯出／清除：全部在瀏覽器端完成。
+ */
+
+/** 備援音色：讀不到 server 音色庫時使用，避免頁面壞掉。 */
+const FALLBACK_VOICE_IDS = [
+  'Kore', 'Puck', 'Charon', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr',
+];
+
+/** 載入共用音色庫；失敗時退回常見音色。 */
+async function loadVoiceLibrary() {
+  try {
+    const list = await api('/api/settings/voices');
+    if (Array.isArray(list) && list.length) {
+      return list.map(v => ({
+        value: v.voiceId,
+        label: (v.displayName || v.voiceId) + '（' + v.voiceId + '）',
+        displayName: v.displayName || v.voiceId,
+        voiceId: v.voiceId,
+        model: v.model || '',
+        gender: v.gender || '',
+        styleDesc: v.styleDesc || '',
+      }));
+    }
+  } catch (e) {
+    console.warn('無法取得全站音色庫，改用備援音色', e);
+  }
+  const settings = await window.NovelTtsDB.settings.get();
+  const ids = new Set(FALLBACK_VOICE_IDS);
+  if (settings.narratorVoice) ids.add(settings.narratorVoice);
+  if (settings.defaultVoice) ids.add(settings.defaultVoice);
+  return Array.from(ids).map(id => ({
+    value: id, label: id, displayName: id, voiceId: id, model: '', gender: '', styleDesc: '',
+  }));
+}
+
+/** 填入音色下拉選單。 */
+function fillVoiceSelect(select, options, selectedValue) {
+  select.innerHTML = '';
+  select.appendChild(el('option', { value: '', text: '（未指定）' }));
+  for (const o of options) {
+    const attrs = { value: o.value, text: o.label };
+    if (selectedValue && o.value === selectedValue) {
+      attrs.selected = 'selected';
+    }
+    select.appendChild(el('option', attrs));
+  }
+  // 目前的值不在清單中（例如使用者自己輸入的音色），補一個選項避免被清掉
+  if (selectedValue && !options.some(o => o.value === selectedValue)) {
+    select.appendChild(el('option', {
+      value: selectedValue, text: selectedValue, selected: 'selected'
+    }));
+  }
+}
+
+/* ---------- 你的 OpenRouter API Key ---------- */
+
+/** 顯示目前的 Key 狀態（遮蔽）。 */
+function renderKeyStatus() {
   const box = document.getElementById('providerList');
+  const cred = window.NovelTtsDB.credentials;
   box.innerHTML = '';
-  const providers = await api('/api/settings/provider');
-  if (!providers.length) { box.appendChild(el('div', { class: 'muted', text: '尚未設定 Provider' })); return; }
   const table = el('table', {},
-    el('thead', {}, el('tr', {}, el('th', { text: '名稱' }), el('th', { text: 'Base URL' }),
-      el('th', { text: 'API Key' }), el('th', { text: '啟用' }), el('th', { text: '預設' }), el('th', { text: '' }))),
-    el('tbody', {}, ...providers.map(p => el('tr', {},
-      el('td', { text: p.name }),
-      el('td', { text: p.baseUrl }),
-      el('td', { text: p.maskedApiKey || '(未設定)' }),
-      el('td', { text: p.enabled ? '是' : '否' }),
-      el('td', { text: p.isDefault ? '是' : '否' }),
-      el('td', {}, el('button', { class: 'btn btn-sm', text: '載入',
-        onclick: () => loadProvider(p) }))
-    )))
+    el('thead', {}, el('tr', {},
+      el('th', { text: '項目' }), el('th', { text: '內容' }))),
+    el('tbody', {},
+      el('tr', {},
+        el('td', { text: 'API Key' }),
+        el('td', { text: cred.has() ? cred.masked() : '(未設定)' })),
+      el('tr', {},
+        el('td', { text: 'Base URL' }),
+        el('td', { text: cred.getBaseUrl() })),
+      el('tr', {},
+        el('td', { text: '存放位置' }),
+        el('td', { text: '你的瀏覽器 localStorage（不會送到伺服器儲存）' }))
+    )
   );
   box.appendChild(table);
 }
 
-function loadProvider(p) {
-  document.getElementById('pName').value = p.name;
-  document.getElementById('pBaseUrl').value = p.baseUrl;
-  document.getElementById('pTimeout').value = p.timeoutSeconds;
-  document.getElementById('pHeaders').value = JSON.stringify(p.extraHeaders || {}, null, 2);
-  document.getElementById('pEnabled').checked = p.enabled;
-  document.getElementById('pDefault').checked = p.isDefault;
-  document.getElementById('pApiKey').value = '';
-  document.getElementById('providerMsg').textContent = '已載入「' + p.name + '」，儲存後生效';
+async function saveKey() {
+  const msg = document.getElementById('providerMsg');
+  const key = document.getElementById('pApiKey').value.trim();
+  const baseUrl = document.getElementById('pBaseUrl').value.trim();
+  if (!key) {
+    msg.textContent = '請貼上你的 OpenRouter API Key';
+    return;
+  }
+  try {
+    window.NovelTtsDB.credentials.set(key);
+    if (baseUrl) window.NovelTtsDB.credentials.setBaseUrl(baseUrl);
+    document.getElementById('pApiKey').value = '';
+    msg.textContent = '已儲存你的 API Key';
+    renderKeyStatus();
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
 }
 
-async function loadModels() {
+async function removeKey() {
+  const msg = document.getElementById('providerMsg');
+  if (!confirm('確定移除你的 OpenRouter API Key？之後的分析與語音合成需要重新填寫。')) return;
+  window.NovelTtsDB.credentials.set('');
+  document.getElementById('pApiKey').value = '';
+  msg.textContent = '已移除 API Key';
+  renderKeyStatus();
+}
+
+async function testKey() {
+  const msg = document.getElementById('providerMsg');
+  const cred = window.NovelTtsDB.credentials;
+  if (!cred.has()) {
+    msg.textContent = '請先儲存你的 API Key';
+    return;
+  }
+  msg.textContent = '測試中…';
+  try {
+    const result = await window.NovelTtsGateway.test();
+    msg.textContent = result && result.ok ? ('連線正常：' + (result.message || '')) :
+      ('連線失敗：' + (result && result.message ? result.message : '未知錯誤'));
+  } catch (e) {
+    msg.textContent = '測試失敗: ' + e.message;
+  }
+}
+
+/* ---------- 全站預設值 ---------- */
+
+let VOICE_OPTIONS = [];
+
+/** 顯示全站共用音色庫。 */
+function renderDefaultVoices() {
+  const box = document.getElementById('voiceList');
+  box.innerHTML = '';
+  if (!VOICE_OPTIONS.length) {
+    box.appendChild(el('div', { class: 'muted', text: '無法取得全站音色庫，將使用備援音色' }));
+    return;
+  }
+  box.appendChild(el('table', {},
+    el('thead', {}, el('tr', {},
+      el('th', { text: '顯示名' }), el('th', { text: 'voice_id' }),
+      el('th', { text: '模型' }), el('th', { text: '性別' }), el('th', { text: '風格' }),
+      el('th', { text: '套用' }))),
+    el('tbody', {}, ...VOICE_OPTIONS.map(v => el('tr', {},
+      el('td', { text: v.displayName }),
+      el('td', { text: v.voiceId }),
+      el('td', { class: 'muted', text: v.model || '-' }),
+      el('td', { text: v.gender || '-' }),
+      el('td', { text: v.styleDesc || '-' }),
+      el('td', {},
+        el('button', {
+          class: 'btn btn-sm', text: '設為旁白',
+          onclick: () => applyVoice(v.voiceId, 'gNarratorVoice')
+        }),
+        ' ',
+        el('button', {
+          class: 'btn btn-sm', text: '設為預設',
+          onclick: () => applyVoice(v.voiceId, 'gDefaultVoice')
+        })
+      )
+    )))
+  ));
+}
+
+/** 套用音色到指定的設定欄位（並存進瀏覽器端設定）。 */
+async function applyVoice(voiceId, targetId) {
+  const select = document.getElementById(targetId);
+  select.value = voiceId;
+  const msg = document.getElementById('generalMsg');
+  const patch = targetId === 'gNarratorVoice'
+    ? { narratorVoice: voiceId }
+    : { defaultVoice: voiceId };
+  try {
+    await window.NovelTtsDB.settings.save(patch);
+    msg.textContent = '已套用音色 ' + voiceId + '（已儲存）';
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
+}
+
+/** 顯示全站預設模型（依用途）。 */
+async function loadDefaultModels() {
   const purpose = document.getElementById('mPurpose').value;
   const box = document.getElementById('modelList');
   box.innerHTML = '';
-  const models = await api('/api/settings/models?purpose=' + purpose);
-  if (!models.length) { box.appendChild(el('div', { class: 'muted', text: '尚未設定此用途的模型' })); return; }
+  let models = [];
+  try {
+    models = await api('/api/settings/models?purpose=' + purpose);
+  } catch (e) {
+    console.warn('無法取得全站模型預設值', e);
+    box.appendChild(el('div', { class: 'muted', text: '無法取得全站模型預設值，請自行填寫模型 ID' }));
+    return;
+  }
+  if (!models || !models.length) {
+    box.appendChild(el('div', { class: 'muted', text: '全站尚未設定此用途的預設模型' }));
+    return;
+  }
+  const isAnalysis = purpose === 'ANALYSIS';
   box.appendChild(el('table', {},
-    el('thead', {}, el('tr', {}, el('th', { text: '模型 ID' }), el('th', { text: '備援模型' }),
-      el('th', { text: 'Temperature' }),
-      el('th', { text: 'Max Tokens' }), el('th', { text: '啟用' }), el('th', { text: '預設' }), el('th', { text: '' }))),
+    el('thead', {}, el('tr', {},
+      el('th', { text: '模型 ID' }), el('th', { text: '備援模型' }),
+      el('th', { text: 'Temperature' }), el('th', { text: 'Max Tokens' }),
+      el('th', { text: '預設' }), el('th', { text: '套用' }))),
     el('tbody', {}, ...models.map(m => el('tr', {},
       el('td', { text: m.modelId }),
       el('td', { text: m.fallbackModelId || '-' }),
-      el('td', { text: m.temperature === null ? '-' : String(m.temperature) }),
-      el('td', { text: m.maxTokens === null ? '-' : String(m.maxTokens) }),
-      el('td', { text: m.enabled ? '是' : '否' }),
+      el('td', { text: m.temperature === null || m.temperature === undefined ? '-' : String(m.temperature) }),
+      el('td', { text: m.maxTokens === null || m.maxTokens === undefined ? '-' : String(m.maxTokens) }),
       el('td', { text: m.isDefault ? '是' : '否' }),
-      el('td', {}, el('button', { class: 'btn btn-sm', text: '載入', onclick: () => loadModel(m) }))
+      el('td', {}, el('button', {
+        class: 'btn btn-sm', text: '套用',
+        onclick: () => applyModel(m, isAnalysis)
+      }))
     )))
   ));
 }
 
-function loadModel(m) {
-  document.getElementById('mModelId').value = m.modelId;
-  document.getElementById('mFallbackModelId').value = m.fallbackModelId || '';
-  document.getElementById('mTemperature').value = m.temperature === null ? '' : m.temperature;
-  document.getElementById('mMaxTokens').value = m.maxTokens === null ? '' : m.maxTokens;
-  document.getElementById('mParams').value = JSON.stringify(m.params || {}, null, 2);
-  document.getElementById('mEnabled').checked = m.enabled;
-  document.getElementById('mDefault').checked = m.isDefault;
-  document.getElementById('modelMsg').textContent = '已載入模型設定，儲存後生效';
-}
-
-async function loadVoices() {
-  const box = document.getElementById('voiceList');
-  box.innerHTML = '';
-  const voices = await api('/api/settings/voices');
-  if (!voices.length) { box.appendChild(el('div', { class: 'muted', text: '尚未建立音色' })); return; }
-  box.appendChild(el('table', {},
-    el('thead', {}, el('tr', {}, el('th', { text: '顯示名' }), el('th', { text: 'voice_id' }),
-      el('th', { text: '模型' }), el('th', { text: '性別' }), el('th', { text: '風格' }), el('th', { text: '' }))),
-    el('tbody', {}, ...voices.map(v => el('tr', {},
-      el('td', { text: v.displayName }),
-      el('td', { text: v.voiceId }),
-      el('td', { class: 'muted', text: v.model }),
-      el('td', { text: v.gender || '-' }),
-      el('td', { text: v.styleDesc || '-' }),
-      el('td', {}, el('button', { class: 'btn btn-sm btn-danger', text: '刪除',
-        onclick: async () => { await api('/api/settings/voices/' + v.id, { method: 'DELETE' }); loadVoices(); } }))
-    )))
-  ));
-}
-
-async function loadGeneral() {
-  const g = await api('/api/settings/general');
-  document.getElementById('gGlobalInstructions').value = g.globalInstructions || '';
-  document.getElementById('gNarratorVoice').value = g.narratorVoiceId || '';
-  document.getElementById('gDefaultVoice').value = g.defaultVoiceId || '';
-  document.getElementById('gChapterMaxChars').value = g.chapterMaxChars;
-  document.getElementById('gTtsConcurrency').value = g.ttsConcurrency;
-  document.getElementById('gTtsGroupMaxChars').value = g.ttsGroupMaxChars;
-  document.getElementById('gAutoAssignVoice').checked = !!g.autoAssignVoice;
-}
-
-document.getElementById('saveProvider').addEventListener('click', async () => {
-  const msg = document.getElementById('providerMsg');
-  let headers = {};
-  try { headers = JSON.parse(document.getElementById('pHeaders').value || '{}'); }
-  catch (e) { msg.textContent = '額外 Header 不是合法 JSON'; return; }
-  try {
-    await api('/api/settings/provider', {
-      method: 'POST',
-      body: JSON.stringify({
-        provider: 'openrouter',
-        name: document.getElementById('pName').value,
-        baseUrl: document.getElementById('pBaseUrl').value,
-        apiKey: document.getElementById('pApiKey').value,
-        extraHeaders: headers,
-        timeoutSeconds: parseInt(document.getElementById('pTimeout').value, 10),
-        enabled: document.getElementById('pEnabled').checked,
-        isDefault: document.getElementById('pDefault').checked
-      })
-    });
-    msg.textContent = '已儲存';
-    loadProviders();
-  } catch (e) { msg.textContent = '失敗: ' + e.message; }
-});
-
-document.getElementById('testProvider').addEventListener('click', async () => {
-  const msg = document.getElementById('providerMsg');
-  msg.textContent = '測試中…';
-  const providers = await api('/api/settings/provider');
-  if (!providers.length) { msg.textContent = '請先儲存 Provider'; return; }
-  try {
-    const result = await api('/api/settings/provider/' + providers[0].id + '/test', { method: 'POST' });
-    msg.textContent = result.ok ? result.message : result.message;
-  } catch (e) { msg.textContent = '失敗: ' + e.message; }
-});
-
-document.getElementById('saveModel').addEventListener('click', async () => {
+/** 套用全站預設模型到自己的模型設定（並存進瀏覽器端設定）。 */
+async function applyModel(m, isAnalysis) {
   const msg = document.getElementById('modelMsg');
-  let params = {};
-  try { params = JSON.parse(document.getElementById('mParams').value || '{}'); }
-  catch (e) { msg.textContent = '參數不是合法 JSON'; return; }
-  const providers = await api('/api/settings/provider');
-  if (!providers.length) { msg.textContent = '請先設定 Provider'; return; }
-  const providerId = providers.find(p => p.isDefault) ? providers.find(p => p.isDefault).id : providers[0].id;
   try {
-    await api('/api/settings/models', {
-      method: 'POST',
-      body: JSON.stringify({
-        providerConfigId: providerId,
-        purpose: document.getElementById('mPurpose').value,
-        modelId: document.getElementById('mModelId').value,
-        fallbackModelId: document.getElementById('mFallbackModelId').value.trim() || null,
-        temperature: parseFloat(document.getElementById('mTemperature').value),
-        maxTokens: parseInt(document.getElementById('mMaxTokens').value, 10),
-        params: params,
-        enabled: document.getElementById('mEnabled').checked,
-        isDefault: document.getElementById('mDefault').checked
-      })
-    });
-    msg.textContent = '已儲存';
-    loadModels();
-  } catch (e) { msg.textContent = '失敗: ' + e.message; }
-});
+    const patch = isAnalysis
+      ? { analysisModel: m.modelId, fallbackAnalysisModel: m.fallbackModelId || '' }
+      : { ttsModel: m.modelId, fallbackTtsModel: m.fallbackModelId || '' };
+    if (m.temperature !== null && m.temperature !== undefined) {
+      patch.temperature = m.temperature;
+    }
+    if (m.maxTokens !== null && m.maxTokens !== undefined) {
+      patch.maxTokens = m.maxTokens;
+    }
+    await window.NovelTtsDB.settings.save(patch);
+    if (isAnalysis) {
+      document.getElementById('mModelId').value = m.modelId;
+      document.getElementById('mFallbackModelId').value = m.fallbackModelId || '';
+    } else {
+      document.getElementById('mTtsModel').value = m.modelId;
+      document.getElementById('mFallbackTtsModel').value = m.fallbackModelId || '';
+    }
+    msg.textContent = '已套用模型 ' + m.modelId + '（已儲存）';
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
+}
 
-document.getElementById('mPurpose').addEventListener('change', loadModels);
+/* ---------- 你的模型與全域參數 ---------- */
 
-document.getElementById('saveVoice').addEventListener('click', async () => {
-  const msg = document.getElementById('voiceMsg');
+/** 讀取瀏覽器端設定並填入表單。 */
+async function loadUserSettings() {
+  const s = await window.NovelTtsDB.settings.get();
+  document.getElementById('mModelId').value = s.analysisModel || '';
+  document.getElementById('mFallbackModelId').value = s.fallbackAnalysisModel || '';
+  document.getElementById('mTtsModel').value = s.ttsModel || '';
+  document.getElementById('mFallbackTtsModel').value = s.fallbackTtsModel || '';
+  document.getElementById('mTemperature').value = s.temperature;
+  document.getElementById('mMaxTokens').value = s.maxTokens;
+
+  document.getElementById('gGlobalInstructions').value = s.globalInstructions || '';
+  fillVoiceSelect(document.getElementById('gNarratorVoice'), VOICE_OPTIONS, s.narratorVoice);
+  fillVoiceSelect(document.getElementById('gDefaultVoice'), VOICE_OPTIONS, s.defaultVoice);
+  document.getElementById('gChapterMaxChars').value = s.chapterMaxChars;
+  document.getElementById('gTtsGroupMaxChars').value = s.ttsGroupMaxChars;
+}
+
+/** 儲存你的模型設定。 */
+async function saveModels() {
+  const msg = document.getElementById('modelMsg');
+  const patch = {
+    analysisModel: document.getElementById('mModelId').value.trim(),
+    fallbackAnalysisModel: document.getElementById('mFallbackModelId').value.trim(),
+    ttsModel: document.getElementById('mTtsModel').value.trim(),
+    fallbackTtsModel: document.getElementById('mFallbackTtsModel').value.trim(),
+  };
+  const temp = parseFloat(document.getElementById('mTemperature').value);
+  if (!isNaN(temp)) patch.temperature = temp;
+  const max = parseInt(document.getElementById('mMaxTokens').value, 10);
+  if (!isNaN(max)) patch.maxTokens = max;
   try {
-    await api('/api/settings/voices', {
-      method: 'POST',
-      body: JSON.stringify({
-        provider: 'openrouter',
-        model: document.getElementById('vModel').value,
-        voiceId: document.getElementById('vVoiceId').value,
-        displayName: document.getElementById('vDisplayName').value,
-        gender: document.getElementById('vGender').value,
-        language: document.getElementById('vLanguage').value,
-        styleDesc: document.getElementById('vStyleDesc').value,
-        sortOrder: parseInt(document.getElementById('vSortOrder').value, 10)
-      })
-    });
-    msg.textContent = '已新增';
-    loadVoices();
-  } catch (e) { msg.textContent = '失敗: ' + e.message; }
-});
+    await window.NovelTtsDB.settings.save(patch);
+    msg.textContent = '已儲存你的模型設定';
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
+}
 
-document.getElementById('syncVoices').addEventListener('click', async () => {
-  const msg = document.getElementById('voiceMsg');
-  msg.textContent = '同步中…';
-  try {
-    const result = await api('/api/settings/voices/sync', {
-      method: 'POST',
-      body: JSON.stringify({ model: document.getElementById('vModel').value })
-    });
-    msg.textContent = '已同步 ' + result.count + ' 個音色';
-    loadVoices();
-  } catch (e) { msg.textContent = '失敗: ' + e.message; }
-});
-
-document.getElementById('saveGeneral').addEventListener('click', async () => {
+/** 儲存全域參數。 */
+async function saveGeneral() {
   const msg = document.getElementById('generalMsg');
+  const patch = {
+    globalInstructions: document.getElementById('gGlobalInstructions').value,
+    narratorVoice: document.getElementById('gNarratorVoice').value,
+    defaultVoice: document.getElementById('gDefaultVoice').value,
+  };
+  const chapter = parseInt(document.getElementById('gChapterMaxChars').value, 10);
+  if (!isNaN(chapter)) patch.chapterMaxChars = chapter;
+  const group = parseInt(document.getElementById('gTtsGroupMaxChars').value, 10);
+  if (!isNaN(group)) patch.ttsGroupMaxChars = group;
   try {
-    await api('/api/settings/general', {
-      method: 'PUT',
-      body: JSON.stringify({
-        globalInstructions: document.getElementById('gGlobalInstructions').value,
-        narratorVoiceId: document.getElementById('gNarratorVoice').value,
-        defaultVoiceId: document.getElementById('gDefaultVoice').value,
-        autoAssignVoice: document.getElementById('gAutoAssignVoice').checked,
-        chapterMaxChars: parseInt(document.getElementById('gChapterMaxChars').value, 10),
-        ttsConcurrency: parseInt(document.getElementById('gTtsConcurrency').value, 10),
-        ttsGroupMaxChars: parseInt(document.getElementById('gTtsGroupMaxChars').value, 10)
-      })
-    });
+    await window.NovelTtsDB.settings.save(patch);
     msg.textContent = '已儲存';
-  } catch (e) { msg.textContent = '失敗: ' + e.message; }
-});
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
+}
 
-loadProviders();
-loadModels();
-loadVoices();
-loadGeneral();
+/* ---------- 資料管理 ---------- */
+
+async function exportData() {
+  const msg = document.getElementById('dataMsg');
+  msg.textContent = '匯出中…';
+  try {
+    const blob = await window.NovelTtsDB.exportJson();
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(blob, 'novel-tts-data-' + stamp + '.json');
+    msg.textContent = '已匯出 JSON（音檔不在匯出內容內）';
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
+}
+
+async function clearData() {
+  const msg = document.getElementById('dataMsg');
+  if (!confirm('確定清除此瀏覽器的全部資料？\n\n包含：所有小說、章節、角色、段落、音檔、群組與設定。\n此動作無法復原。')) return;
+  if (!confirm('再確認一次：真的要清除全部資料嗎？建議先「匯出我的資料」備份。')) return;
+  try {
+    await window.NovelTtsDB.clearAll();
+    msg.textContent = '已清除全部資料';
+    await loadUserSettings();
+    renderKeyStatus();
+  } catch (e) {
+    msg.textContent = '失敗: ' + e.message;
+  }
+}
+
+/* ---------- 事件綁定 ---------- */
+
+document.getElementById('saveProvider').addEventListener('click', saveKey);
+document.getElementById('removeKeyBtn').addEventListener('click', removeKey);
+document.getElementById('testProvider').addEventListener('click', testKey);
+document.getElementById('mPurpose').addEventListener('change', loadDefaultModels);
+document.getElementById('saveModel').addEventListener('click', saveModels);
+document.getElementById('saveGeneral').addEventListener('click', saveGeneral);
+document.getElementById('exportData').addEventListener('click', exportData);
+document.getElementById('clearData').addEventListener('click', clearData);
+
+(async () => {
+  VOICE_OPTIONS = await loadVoiceLibrary();
+  renderDefaultVoices();
+  renderKeyStatus();
+  await loadUserSettings();
+  await loadDefaultModels();
+})();
