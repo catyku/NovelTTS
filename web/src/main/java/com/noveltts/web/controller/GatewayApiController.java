@@ -120,7 +120,7 @@ public class GatewayApiController {
     private GatewayProvider provider(String headerKey, String headerBaseUrl, String bodyBaseUrl) {
         String key = headerKey;
         if (key == null || key.isBlank()) {
-            throw new IllegalArgumentException("缺少 X-OpenRouter-Key");
+            throw new com.noveltts.web.MissingApiKeyException("缺少 X-OpenRouter-Key");
         }
         String base = headerBaseUrl != null && !headerBaseUrl.isBlank()
                 ? headerBaseUrl

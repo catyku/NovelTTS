@@ -47,6 +47,10 @@
     const text = await response.text();
     try {
       const json = JSON.parse(text);
+      // 401：Key 缺失或無效 —— 直接引導使用者去設定頁
+      if (response.status === 401 || json.error === 'missing_api_key') {
+        return 'OpenRouter API Key 無效或尚未設定，請到「設定」頁填寫你的 Key。';
+      }
       return json.message || json.error || json.detail || text;
     } catch (e) {
       return text || `HTTP ${response.status}`;
