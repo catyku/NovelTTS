@@ -134,7 +134,6 @@
         minChars: opts.minChars,
         maxChars: opts.maxChars,
         temperature: opts.temperature !== undefined ? opts.temperature : 0.8,
-        maxTokens: opts.maxTokens !== undefined ? opts.maxTokens : settings.maxTokens,
         extraParams: opts.extraParams || {},
       };
       const response = await fetch(url('/generate-outline'), {
@@ -172,7 +171,8 @@
         previousEnding: opts.previousEnding || null,
         extra: opts.extra || null,
         temperature: opts.temperature !== undefined ? opts.temperature : 0.8,
-        maxTokens: opts.maxTokens !== undefined ? opts.maxTokens : settings.maxTokens,
+        // 不傳 maxTokens：server 端會依字數上限自行換算成硬上限。
+        // 傳全域設定的 maxTokens（預設 8000）會讓章節長度失控。
         extraParams: opts.extraParams || {},
       };
       const response = await fetch(url('/generate-chapter'), {

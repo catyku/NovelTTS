@@ -3,6 +3,7 @@ package com.noveltts.ai;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,8 +21,10 @@ class GenerationPromptBuilderTest {
         assertTrue(prompt.contains("一名失憶的書店老闆"), "應帶入創作想法");
         assertTrue(prompt.contains("第 3 章"), "應帶入章序");
         assertTrue(prompt.contains("10 章"), "應帶入總章數");
-        assertTrue(prompt.contains("800"), "應帶入字數下限");
-        assertTrue(prompt.contains("1500"), "應帶入字數上限");
+        // 字數會經過超寫係數補償（見 lengthIsCompensatedForOvershoot），
+        // 這裡確認 prompt 有帶入字數指示即可。
+        assertTrue(prompt.contains("本章篇幅："), "應帶入字數指示");
+        assertTrue(prompt.contains("字（以繁體中文字元計）"), "應說明字數單位");
     }
 
     @Test
@@ -62,6 +65,46 @@ class GenerationPromptBuilderTest {
         assertTrue(prompt.contains("5 章"), "應帶入章數");
         assertTrue(prompt.contains("1000"), "應帶入字數下限");
         assertTrue(prompt.contains("2000"), "應帶入字數上限");
+    }
+
+    @Test
+    @DisplayName("prompt 要求的字數經過超寫係數補償")
+    void lengthIsCompensatedForOvershoot() {
+        String prompt = GenerationPromptBuilder.chapterPrompt(
+                "想法", 1, 3, 1000, 1500, null, null, null);
+        // 目標中值 1250，補償後應為 1250 / 1.3 ≈ 962
+        int expected = GenerationPromptBuilder.compensatedLength(1000, 1500);
+        assertTrue(prompt.contains("本章篇幅：" + expected + " 字"),
+                "應使用補償後的字數，期望 " + expected);
+        assertTrue(expected < 1250, "補償後的字數應小於目標中值");
+    }
+
+    @Test
+    @DisplayName("max_tokens 依字數上限換算，且留有收尾餘裕")
+    void maxTokensDerivedFromCharLimit() {
+        int mt = GenerationPromptBuilder.maxTokensFor(1500, 8000);
+        // 1500 字 / 1.22 字每 token * 1.12 ≈ 1378
+        assertTrue(mt > 1200 && mt < 1500, "max_tokens 應接近字數上限，實際 " + mt);
+
+        // 沒給字數上限時用 fallback
+        assertEquals(8000, GenerationPromptBuilder.maxTokensFor(0, 8000));
+    }
+
+    @Test
+    @DisplayName("超出上限時截到最後一個完整句子")
+    void trimToSentenceStopsAtCleanBoundary() {
+        String text = "第一句。第二句。第三句。第四句。第五句。";
+        // 上限 20 字 → 會截在「第三句。」之後
+        String trimmed = GenerationPromptBuilder.trimToSentence(text, 20);
+        assertTrue(trimmed.endsWith("。"), "應停在句號，實際：" + trimmed);
+        assertTrue(trimmed.length() <= 20, "不應超過上限");
+    }
+
+    @Test
+    @DisplayName("未超上限時原樣保留")
+    void trimKeepsShortText() {
+        String text = "很短。";
+        assertEquals(text, GenerationPromptBuilder.trimToSentence(text, 100));
     }
 
     @Test

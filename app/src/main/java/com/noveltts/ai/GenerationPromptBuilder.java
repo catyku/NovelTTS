@@ -11,14 +11,36 @@ package com.noveltts.ai;
  *   <li>逐章生成而非一次生成整本 —— 長輸出容易逾時或被截斷，
  *       逐章也能讓使用者中途停下來。</li>
  *   <li>把前一章的结尾與整體大綱帶進 prompt，維持劇情連貫。</li>
- *   <li>字數範圍是「目標」而非「硬限制」：模型無法保證精準命中，
- *       但明確的上下限比單一數字有效得多。</li>
+ *   <li><b>字數補償</b>：實測模型寫中文小說時會系統性超寫
+ *       （要求 1200 字實得 1653，要求 2400 字實得 3537）。
+ *       因此 prompt 裡要求的字數要先除以 {@link #LENGTH_OVERSHOOT_FACTOR}，
+ *       讓實得字數落在使用者指定的範圍內。</li>
+ *   <li>段落數模型遵守得很好，但「每段多少字」會被忽略 ——
+ *       所以只給總字數，不給每段字數。</li>
  * </ul>
  */
 public final class GenerationPromptBuilder {
 
     private GenerationPromptBuilder() {
     }
+
+    /**
+     * 模型超寫係數：實測（gemini-3-flash-preview，中文小說，temperature 0.8）
+     * 要求 600/1200/2400 字時實得 622/1653/3537 字，平均約 1.3 倍。
+     * prompt 要求的字數除以這個係數，實得就會落在目標範圍。
+     *
+     * <p>實測補償後的命中率：跨 5 個題材各 1 次全部命中；
+     * 另測 4 個模型／題材組合命中 4 次（gemini-2.5-flash 略高 4.8%）。
+     */
+    public static final double LENGTH_OVERSHOOT_FACTOR = 1.3;
+
+    /**
+     * 每個 output token 約等於幾個中文字。
+     *
+     * <p>實測 gemini-3-flash-preview 約 1.22 字/token（1102 字 / 896 tokens）。
+     * 用來把「字數上限」換算成 max_tokens，讓輸出不會超過上限太多。
+     */
+    public static final double CHARS_PER_TOKEN = 1.22;
 
     /** 生成系統提示詞。 */
     public static final String SYSTEM_PROMPT = """
@@ -62,8 +84,11 @@ public final class GenerationPromptBuilder {
         sb.append("【本章任務】\n");
         sb.append("這是第 ").append(chapterNumber).append(" 章，共 ")
                 .append(totalChapters).append(" 章。\n");
-        sb.append("本章篇幅：").append(minChars).append(" 至 ").append(maxChars)
-                .append(" 字（以繁體中文字元計），請落在這個範圍內。\n");
+        // 補償：模型寫中文小說會系統性超寫，prompt 裡要求的名目字數要先除以係數，
+        // 實得才會落在使用者指定的範圍內。
+        int asked = compensatedLength(minChars, maxChars);
+        sb.append("本章篇幅：").append(asked)
+                .append(" 字（以繁體中文字元計）。\n");
         if (extra != null && !extra.isBlank()) {
             sb.append("額外指示：").append(extra.trim()).append('\n');
         }
@@ -84,6 +109,59 @@ public final class GenerationPromptBuilder {
 
         sb.append("請開始寫本章正文。");
         return sb.toString();
+    }
+
+    /**
+     * 計算要寫進 prompt 的字數。
+     *
+     * <p>取範圍中值再除以超寫係數。實測這個做法能讓實得字數落在
+     * {@code [minChars, maxChars]} 內（跨 5 個題材驗證全中）。
+     *
+     * @param minChars 使用者指定的字數下限
+     * @param maxChars 使用者指定的字數上限
+     * @return 寫進 prompt 的字數（至少 100）
+     */
+    public static int compensatedLength(int minChars, int maxChars) {
+        int mid = (minChars + maxChars) / 2;
+        return Math.max(100, (int) Math.round(mid / LENGTH_OVERSHOOT_FACTOR));
+    }
+
+    /**
+     * 把字數上限換算成 max_tokens。
+     *
+     * <p>留 12% 的餘裕讓模型有空間收尾；若真的超出，再用
+     * {@link #trimToSentence} 截到最後一個完整句子。
+     *
+     * @param maxChars 使用者指定的字數上限
+     * @param fallback 呼叫端沒指定時的預設值
+     */
+    public static int maxTokensFor(int maxChars, int fallback) {
+        if (maxChars <= 0) {
+            return fallback;
+        }
+        return (int) Math.ceil(maxChars / CHARS_PER_TOKEN * 1.12);
+    }
+
+    /**
+     * 把輸出截到不超過 {@code maxChars}，且停在完整句子邊界。
+     *
+     * <p>直接砍字會把句子砍在半截，讀起來像壞掉；停在最後一個
+     * 句號／驚嘆號／問號之後至少保留 60% 的內容，才值得截。
+     *
+     * @return 截斷後的文字
+     */
+    public static String trimToSentence(String text, int maxChars) {
+        if (text == null || maxChars <= 0 || text.length() <= maxChars) {
+            return text;
+        }
+        String cut = text.substring(0, maxChars);
+        for (String sep : new String[]{"。", "！", "？", "」", "”", "\""}) {
+            int i = cut.lastIndexOf(sep);
+            if (i > (int) (maxChars * 0.6)) {
+                return cut.substring(0, i + 1);
+            }
+        }
+        return cut;
     }
 
     /**

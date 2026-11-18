@@ -48,6 +48,19 @@ public class OpenRouterClient {
      */
     public ChatResult chat(GatewayProvider config, String model, List<ChatMessage> messages,
                            Double temperature, Integer maxTokens, Map<String, Object> extraParams) {
+        return chat(config, model, messages, temperature, maxTokens, extraParams, true);
+    }
+
+    /**
+     * 無狀態閘道版，可指定是否要求 JSON 回應。
+     *
+     * @param jsonResponse true 時帶上 {@code response_format: json_object}（分析用）；
+     *                     false 時不帶，讓模型自由輸出純文字（生成小說用 ——
+     *                     要求 JSON 會讓模型把正文包進字串裡，讀起來多一層引號）
+     */
+    public ChatResult chat(GatewayProvider config, String model, List<ChatMessage> messages,
+                           Double temperature, Integer maxTokens, Map<String, Object> extraParams,
+                           boolean jsonResponse) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("messages", messages.stream()
@@ -62,7 +75,9 @@ public class OpenRouterClient {
         if (extraParams != null && !extraParams.isEmpty()) {
             body.putAll(extraParams);
         }
-        body.put("response_format", Map.of("type", "json_object"));
+        if (jsonResponse) {
+            body.put("response_format", Map.of("type", "json_object"));
+        }
 
         Map<String, Object> response = exchange(config, "/chat/completions", body, Map.class);
         String content = extractContent(response);
@@ -283,6 +298,13 @@ public class OpenRouterClient {
                     Object content = mm.get("content");
                     if (content != null) {
                         return String.valueOf(content);
+                    }
+                    // Reasoning 模型（deepseek 等）在 max_tokens 用盡時會把
+                    // content 留成 null，正文全在 reasoning 欄位裡。
+                    // 那時把 reasoning 當成輸出 —— 至少比整個請求失敗好。
+                    Object reasoning = mm.get("reasoning");
+                    if (reasoning != null && !String.valueOf(reasoning).isBlank()) {
+                        return String.valueOf(reasoning);
                     }
                 }
             }

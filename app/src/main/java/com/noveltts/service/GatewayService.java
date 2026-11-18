@@ -43,6 +43,14 @@ public class GatewayService {
     /** 重試退避基準（毫秒），第 n 次等待 base * 2^n。 */
     private static final long RETRY_BACKOFF_BASE_MS = 1000L;
 
+    /**
+     * 呼叫端沒指定模型時的預設值。
+     *
+     * <p>不給預設值的話，OpenRouter 會自行挑一個模型 —— 可能挑到 reasoning 模型
+     * （deepseek 等），它的思考 token 會吃光 max_tokens，導致正文變成 null。
+     */
+    private static final String DEFAULT_TEXT_MODEL = "google/gemini-3-flash-preview";
+
     private final OpenRouterClient openRouterClient;
     private final SegmentParser segmentParser;
     private final NovelTtsProperties properties;
@@ -103,8 +111,9 @@ public class GatewayService {
                 new ChatMessage("system", GenerationPromptBuilder.SYSTEM_PROMPT),
                 new ChatMessage("user", GenerationPromptBuilder.outlinePrompt(
                         idea, chapterCount, minChars, maxChars)));
+        // jsonResponse = false：要求 JSON 會讓模型把大綱包進字串裡
         return callChatWithFallback(provider, model, fallbackModelId, messages,
-                temperature, maxTokens, extraParams).trim();
+                temperature, maxTokens, extraParams, false).trim();
     }
 
     /**
@@ -133,8 +142,17 @@ public class GatewayService {
                 new ChatMessage("user", GenerationPromptBuilder.chapterPrompt(
                         idea, chapterNumber, totalChapters, minChars, maxChars,
                         outline, previousEnding, extra)));
-        return callChatWithFallback(provider, model, fallbackModelId, messages,
-                temperature, maxTokens, extraParams).trim();
+        // max_tokens 當硬保險：一律由字數上限換算，不採呼叫端傳入的值 ——
+        // 全域設定的 maxTokens 是給「分析」用的（8000），拿來生成章節會讓輸出失控。
+        //
+        // 多給 40% 緩衝：reasoning 模型（deepseek、o 系列等）會把思考 token
+        // 算進 max_tokens 預算，空間不夠時正文會被截斷甚至變成 null。
+        int effectiveMaxTokens = (int) Math.ceil(
+                GenerationPromptBuilder.maxTokensFor(maxChars, 8000) * 1.4);
+        String content = callChatWithFallback(provider, model, fallbackModelId, messages,
+                temperature, effectiveMaxTokens, extraParams, false).trim();
+        // 保險：仍超出上限就截到最後一個完整句子。
+        return GenerationPromptBuilder.trimToSentence(content, maxChars).trim();
     }
 
     /**
@@ -177,12 +195,28 @@ public class GatewayService {
                                         String fallbackModelId, List<ChatMessage> messages,
                                         Double temperature, Integer maxTokens,
                                         Map<String, Object> extraParams) {
+        return callChatWithFallback(provider, model, fallbackModelId, messages,
+                temperature, maxTokens, extraParams, true);
+    }
+
+    /**
+     * 分析呼叫：429/5xx 退避重試，仍失敗則改用備援模型。
+     *
+     * @param jsonResponse true 時要求 JSON 回應；生成小說時傳 false
+     */
+    private String callChatWithFallback(GatewayProvider provider, String model,
+                                        String fallbackModelId, List<ChatMessage> messages,
+                                        Double temperature, Integer maxTokens,
+                                        Map<String, Object> extraParams,
+                                        boolean jsonResponse) {
         AiCallException lastError = null;
+        String effectiveModel = (model == null || model.isBlank())
+                ? DEFAULT_TEXT_MODEL : model;
 
         for (int attempt = 0; attempt < MAX_CHAT_ATTEMPTS; attempt++) {
             try {
-                ChatResult result = openRouterClient.chat(provider, model, messages,
-                        temperature, maxTokens, extraParams);
+                ChatResult result = openRouterClient.chat(provider, effectiveModel, messages,
+                        temperature, maxTokens, extraParams, jsonResponse);
                 return result.content();
             } catch (AiCallException e) {
                 lastError = e;
@@ -201,7 +235,7 @@ public class GatewayService {
             log.warn("主要模型 {} 失敗，改用備援模型 {}", model, fallbackModelId);
             try {
                 ChatResult result = openRouterClient.chat(provider, fallbackModelId, messages,
-                        temperature, maxTokens, extraParams);
+                        temperature, maxTokens, extraParams, jsonResponse);
                 return result.content();
             } catch (AiCallException e) {
                 log.error("備援模型 {} 同样失敗 (HTTP {}): {}",
