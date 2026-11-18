@@ -65,6 +65,7 @@
   <div class="guide-toc">
     <h2>完整流程</h2>
     <ol>
+      <li><a href="#step-try">先試試看：載入一份範例</a></li>
       <li><a href="#step-key">設定你的 OpenRouter API Key</a></li>
       <li><a href="#step-import">匯入小說</a></li>
       <li><a href="#step-analyze">觸發 AI 分析</a></li>
@@ -76,6 +77,63 @@
       <li><a href="#faq">常見問題</a></li>
     </ol>
   </div>
+
+  <!-- ============ 試試看 ============ -->
+  <section class="guide-step" id="step-try">
+    <h2><span class="step-num">▶</span><span class="step-title">先試試看：載入一份範例</span></h2>
+
+    <p>
+      不想從頭打字？下面這份範例是用真實 OpenRouter 產生的 ——
+      一本兩集的示範小說「燈火重亮」，AI 分析出旁白與兩位角色，
+      全部音檔都已合成好。按「把範例匯入我的瀏覽器」，它就會出現在你的
+      「小說」「群組」「角色音色」「段落與音檔」頁，跟你自己做的完全一樣，
+      而且可以直接試聽。
+    </p>
+
+    <div class="guide-demo" id="demoBox">
+      <div class="guide-demo-head">
+        <div>
+          <strong>範例：燈火重亮（兩集）</strong>
+          <div class="muted" id="demoSummary">載入中…</div>
+        </div>
+        <div class="guide-demo-actions">
+          <button class="btn btn-primary" id="demoImport">把範例匯入我的瀏覽器</button>
+          <button class="btn" id="demoRemove" style="display:none">移除範例</button>
+        </div>
+      </div>
+
+      <div class="guide-demo-progress" id="demoProgress" style="display:none">
+        <div class="progress"><span id="demoBar" style="width:0%"></span></div>
+        <span class="muted" id="demoProgressText"></span>
+      </div>
+
+      <div class="guide-demo-body" id="demoBody">
+        <div class="guide-demo-col">
+          <h3>群組共用角色</h3>
+          <div id="demoChars"></div>
+        </div>
+        <div class="guide-demo-col">
+          <h3>試聽</h3>
+          <div id="demoAudio"></div>
+        </div>
+      </div>
+    </div>
+
+    <figure class="guide-figure">
+      <img th:src="@{/docs/screenshots/guide/13-demo-section.png}" alt="說明頁上的範例區塊：群組共用角色與可試聽的音檔">
+      <figcaption>
+        範例區塊。左边是群組的共用角色與音色，右邊可以直接試聽每個段落 ——
+        旁白是 Kore、林晚是 Aoede、陳硯是 Charon。
+      </figcaption>
+    </figure>
+
+    <div class="guide-callout">
+      <strong>匯入之後會怎樣？</strong>
+      範例會存進你這台電腦的瀏覽器（跟一般作品一樣），
+      但它的標題前面有「範例」字樣，方便你分辨。
+      按「移除範例」可以只刪掉範例、不影響你自己做的作品。
+    </div>
+  </section>
 
   <!-- ============ 步驟 1 ============ -->
   <section class="guide-step" id="step-key">
@@ -444,6 +502,8 @@
 </main>
 <script th:src="@{/js/common.js}"></script>
 <script th:src="@{/js/db.js}"></script>
+<script th:src="@{/js/demo.js}"></script>
+<script th:src="@{/js/guide.js}"></script>
 <script>
 /* 導覽列右側顯示 Key 狀態 */
 (function () {

@@ -1,0 +1,532 @@
+{
+ "group": {
+  "id": "demo_group",
+  "title": "燈火重亮",
+  "author": "示範作者",
+  "description": "同一本連載小說的各集，共用角色音色與旁白音色",
+  "narratorVoice": "Kore",
+  "narratorInstructions": "語氣沉穩，敘述節奏平緩",
+  "characters": [
+   {
+    "id": "dc1",
+    "name": "林晚",
+    "aliases": [
+     "晚晚",
+     "小林"
+    ],
+    "ttsVoice": "Aoede",
+    "ttsInstructions": "語氣清冷，語速偏慢"
+   },
+   {
+    "id": "dc2",
+    "name": "陳硯",
+    "aliases": [
+     "陳先生"
+    ],
+    "ttsVoice": "Charon",
+    "ttsInstructions": "語氣低沉，話少，帶點冷幽默"
+   }
+  ]
+ },
+ "novels": [
+  {
+   "id": "demo_n1",
+   "title": "燈火重亮 第一集",
+   "author": "示範作者",
+   "groupId": "demo_group",
+   "groupOrder": 1,
+   "content": "第一章 夜歸\n\n林晚推開舊書店的大門，銅鈴響了一聲。\n她低聲說：「今晚風很大，我以為你不會來。」\n陳硯沒有回頭。\n「我從來沒說過我不會來。」\n\n第二章 舊信\n\n第二天清晨，林晚帶著一封信回來。\n陳硯推開窗戶：「你先坐下，風大。」",
+   "status": "ANALYZED",
+   "chapters": [
+    {
+     "id": "ch_mwlos13d_f78s8s",
+     "index": 1,
+     "title": "第一章 夜歸",
+     "content": "林晚推開舊書店的大門，銅鈴響了一聲。\n她低聲說：「今晚風很大，我以為你不會來。」\n陳硯沒有回頭。\n「我從來沒說過我不會來。」",
+     "charCount": 62,
+     "status": "ANALYZED",
+     "segments": [
+      {
+       "id": "seg_mwlos13d_a0ae50",
+       "seq": 1,
+       "chapterId": "ch_mwlos13d_f78s8s",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "林晚推開舊書店的大門，銅鈴響了一聲。",
+       "emotion": "平",
+       "styleHint": "冷靜",
+       "instructions": "以平靜且略帶敘事感的語氣朗讀",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlos13d_9cxtlh",
+       "seq": 2,
+       "chapterId": "ch_mwlos13d_f78s8s",
+       "type": "DIALOGUE",
+       "characterId": "char_mwlos32a_zjye69",
+       "characterName": "林晚",
+       "speakerName": "林晚",
+       "text": "今晚風很大，我以為你不會來。",
+       "emotion": "平",
+       "styleHint": "輕柔",
+       "instructions": "語氣輕柔且帶著一絲試探的低語",
+       "voice": "Aoede",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlos13d_qw4yas",
+       "seq": 3,
+       "chapterId": "ch_mwlos13d_f78s8s",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "陳硯沒有回頭。",
+       "emotion": "平",
+       "styleHint": "低沉",
+       "instructions": "語速放慢，表現出沉靜的氛圍",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlos13d_8q606g",
+       "seq": 4,
+       "chapterId": "ch_mwlos13d_f78s8s",
+       "type": "DIALOGUE",
+       "characterId": "char_mwlos32a_7jfdoi",
+       "characterName": "陳硯",
+       "speakerName": "陳硯",
+       "text": "我從來沒說過我不會來。",
+       "emotion": "平",
+       "styleHint": "冷靜",
+       "instructions": "語氣平穩冷淡，不帶明顯情緒波動",
+       "voice": "Charon",
+       "ttsStatus": "DONE"
+      }
+     ]
+    },
+    {
+     "id": "ch_mwlos329_kd3m09",
+     "index": 2,
+     "title": "第二章 舊信",
+     "content": "第二天清晨，林晚帶著一封信回來。\n陳硯推開窗戶：「你先坐下，風大。」",
+     "charCount": 34,
+     "status": "ANALYZED",
+     "segments": [
+      {
+       "id": "seg_mwlos329_495w0r",
+       "seq": 1,
+       "chapterId": "ch_mwlos329_kd3m09",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "第二天清晨，林晚帶著一封信回來。",
+       "emotion": "平",
+       "styleHint": "冷靜",
+       "instructions": "以平穩中性的語調敘述，節奏適中",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlos329_pe4y2d",
+       "seq": 2,
+       "chapterId": "ch_mwlos329_kd3m09",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "陳硯推開窗戶：",
+       "emotion": "平",
+       "styleHint": "低沉",
+       "instructions": "語氣沉穩，帶動動作的敘述感",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlos329_ezgti6",
+       "seq": 3,
+       "chapterId": "ch_mwlos329_kd3m09",
+       "type": "DIALOGUE",
+       "characterId": "char_mwlos32a_7jfdoi",
+       "characterName": "陳硯",
+       "speakerName": "陳硯",
+       "text": "你先坐下，風大。",
+       "emotion": "平",
+       "styleHint": "溫柔",
+       "instructions": "語氣柔和且帶著關懷，節奏緩慢",
+       "voice": "Charon",
+       "ttsStatus": "DONE"
+      }
+     ]
+    }
+   ],
+   "characters": [
+    {
+     "id": "char_mwlos32a_zjye69",
+     "name": "林晚",
+     "aliases": [
+      "晚晚",
+      "小林"
+     ],
+     "ttsVoice": "Aoede",
+     "ttsInstructions": "語氣清冷，語速偏慢",
+     "segmentCount": 1,
+     "gender": "",
+     "ageGroup": "",
+     "personality": "",
+     "description": ""
+    },
+    {
+     "id": "char_mwlos32a_7jfdoi",
+     "name": "陳硯",
+     "aliases": [
+      "陳先生"
+     ],
+     "ttsVoice": "Charon",
+     "ttsInstructions": "語氣低沉，話少，帶點冷幽默",
+     "segmentCount": 2,
+     "gender": "",
+     "ageGroup": "",
+     "personality": "",
+     "description": ""
+    }
+   ]
+  },
+  {
+   "id": "demo_n2",
+   "title": "燈火重亮 第二集",
+   "author": "示範作者",
+   "groupId": "demo_group",
+   "groupOrder": 2,
+   "content": "第三章 舊信\n\n林晚拆開那封信，指尖微微發抖。\n「你早就知道了，對不對。」\n陳硯終於轉過身來。\n「我等了很久，才等到你願意問。」\n\n第四章 雨\n\n窗外下起雨來。林晚收起信，抬頭看他。\n「那就再等等吧。」",
+   "status": "ANALYZED",
+   "chapters": [
+    {
+     "id": "ch_mwlot4k7_wv467w",
+     "index": 1,
+     "title": "第三章 舊信",
+     "content": "林晚拆開那封信，指尖微微發抖。\n「你早就知道了，對不對。」\n陳硯終於轉過身來。\n「我等了很久，才等到你願意問。」",
+     "charCount": 56,
+     "status": "ANALYZED",
+     "segments": [
+      {
+       "id": "seg_mwlot4k7_3c8zj4",
+       "seq": 1,
+       "chapterId": "ch_mwlot4k7_wv467w",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "林晚拆開那封信，指尖微微發抖。",
+       "emotion": "驚",
+       "styleHint": "低沉",
+       "instructions": "語氣低沉且帶有細微的顫抖感",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlot4k7_760x4f",
+       "seq": 2,
+       "chapterId": "ch_mwlot4k7_wv467w",
+       "type": "DIALOGUE",
+       "characterId": "char_mwlot6hc_tfce7p",
+       "characterName": "林晚",
+       "speakerName": "林晚",
+       "text": "你早就知道了，對不對。",
+       "emotion": "哀",
+       "styleHint": "冷靜",
+       "instructions": "壓抑著情緒，語氣冷靜卻帶著質問",
+       "voice": "Aoede",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlot4k7_akk55s",
+       "seq": 3,
+       "chapterId": "ch_mwlot4k7_wv467w",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "陳硯終於轉過身來。",
+       "emotion": "平",
+       "styleHint": "嚴肅",
+       "instructions": "節奏緩慢，營造出沉重的氛圍",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlot4k7_y3db6u",
+       "seq": 4,
+       "chapterId": "ch_mwlot4k7_wv467w",
+       "type": "DIALOGUE",
+       "characterId": "char_mwlot6hc_qq2w85",
+       "characterName": "陳硯",
+       "speakerName": "陳硯",
+       "text": "我等了很久，才等到你願意問。",
+       "emotion": "平",
+       "styleHint": "低沉",
+       "instructions": "語氣深沉，透出一種釋然的疲憊感",
+       "voice": "Charon",
+       "ttsStatus": "DONE"
+      }
+     ]
+    },
+    {
+     "id": "ch_mwlot6hc_g7l57c",
+     "index": 2,
+     "title": "第四章 雨",
+     "content": "窗外下起雨來。林晚收起信，抬頭看他。\n「那就再等等吧。」",
+     "charCount": 28,
+     "status": "ANALYZED",
+     "segments": [
+      {
+       "id": "seg_mwlot6hc_o9wp1v",
+       "seq": 1,
+       "chapterId": "ch_mwlot6hc_g7l57c",
+       "type": "NARRATION",
+       "characterId": null,
+       "characterName": null,
+       "speakerName": "旁白",
+       "text": "窗外下起雨來。林晚收起信，抬頭看他。",
+       "emotion": "平",
+       "styleHint": "冷靜",
+       "instructions": "語氣平緩自然，帶有一絲寧靜感",
+       "voice": "Kore",
+       "ttsStatus": "DONE"
+      },
+      {
+       "id": "seg_mwlot6hc_szi5xm",
+       "seq": 2,
+       "chapterId": "ch_mwlot6hc_g7l57c",
+       "type": "DIALOGUE",
+       "characterId": "char_mwlot6hc_tfce7p",
+       "characterName": "林晚",
+       "speakerName": "林晚",
+       "text": "那就再等等吧。",
+       "emotion": "平",
+       "styleHint": "溫柔",
+       "instructions": "語氣柔和且從容，帶有商量的口吻",
+       "voice": "Aoede",
+       "ttsStatus": "DONE"
+      }
+     ]
+    }
+   ],
+   "characters": [
+    {
+     "id": "char_mwlot6hc_tfce7p",
+     "name": "林晚",
+     "aliases": [
+      "晚晚",
+      "小林"
+     ],
+     "ttsVoice": "Aoede",
+     "ttsInstructions": "語氣清冷，語速偏慢",
+     "segmentCount": 2,
+     "gender": "",
+     "ageGroup": "",
+     "personality": "",
+     "description": ""
+    },
+    {
+     "id": "char_mwlot6hc_qq2w85",
+     "name": "陳硯",
+     "aliases": [
+      "陳先生"
+     ],
+     "ttsVoice": "Charon",
+     "ttsInstructions": "語氣低沉，話少，帶點冷幽默",
+     "segmentCount": 1,
+     "gender": "",
+     "ageGroup": "",
+     "personality": "",
+     "description": ""
+    }
+   ]
+  }
+ ],
+ "audio": [
+  {
+   "novelId": "demo_n1",
+   "kind": "CHAPTER",
+   "refId": "ch_mwlos13d_f78s8s",
+   "file": "demo_n1__CHAPTER__ch_mwlos13d_f78s8s.mp3",
+   "size": 214700,
+   "meta": {
+    "fileName": "chapter-1.mp3",
+    "chapterIndex": 1
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos13d_8q606g",
+   "file": "demo_n1__SEGMENT__seg_mwlos13d_8q606g.mp3",
+   "size": 43052,
+   "meta": {
+    "voice": "Charon",
+    "chapterId": "ch_mwlos13d_f78s8s",
+    "fileName": "seg_mwlos13d_8q606g.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos13d_9cxtlh",
+   "file": "demo_n1__SEGMENT__seg_mwlos13d_9cxtlh.mp3",
+   "size": 55724,
+   "meta": {
+    "voice": "Aoede",
+    "chapterId": "ch_mwlos13d_f78s8s",
+    "fileName": "seg_mwlos13d_9cxtlh.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos13d_a0ae50",
+   "file": "demo_n1__SEGMENT__seg_mwlos13d_a0ae50.mp3",
+   "size": 74924,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlos13d_f78s8s",
+    "fileName": "seg_mwlos13d_a0ae50.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos13d_qw4yas",
+   "file": "demo_n1__SEGMENT__seg_mwlos13d_qw4yas.mp3",
+   "size": 42284,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlos13d_f78s8s",
+    "fileName": "seg_mwlos13d_qw4yas.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos329_495w0r",
+   "file": "demo_n1__SEGMENT__seg_mwlos329_495w0r.mp3",
+   "size": 63404,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlos329_kd3m09",
+    "fileName": "seg_mwlos329_495w0r.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos329_ezgti6",
+   "file": "demo_n1__SEGMENT__seg_mwlos329_ezgti6.mp3",
+   "size": 39596,
+   "meta": {
+    "voice": "Charon",
+    "chapterId": "ch_mwlos329_kd3m09",
+    "fileName": "seg_mwlos329_ezgti6.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n1",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlos329_pe4y2d",
+   "file": "demo_n1__SEGMENT__seg_mwlos329_pe4y2d.mp3",
+   "size": 36524,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlos329_kd3m09",
+    "fileName": "seg_mwlos329_pe4y2d.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "CHAPTER",
+   "refId": "ch_mwlot4k7_wv467w",
+   "file": "demo_n2__CHAPTER__ch_mwlot4k7_wv467w.mp3",
+   "size": 270764,
+   "meta": {
+    "fileName": "chapter-1.mp3",
+    "chapterIndex": 1
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlot4k7_3c8zj4",
+   "file": "demo_n2__SEGMENT__seg_mwlot4k7_3c8zj4.mp3",
+   "size": 88364,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlot4k7_wv467w",
+    "fileName": "seg_mwlot4k7_3c8zj4.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlot4k7_760x4f",
+   "file": "demo_n2__SEGMENT__seg_mwlot4k7_760x4f.mp3",
+   "size": 49964,
+   "meta": {
+    "voice": "Aoede",
+    "chapterId": "ch_mwlot4k7_wv467w",
+    "fileName": "seg_mwlot4k7_760x4f.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlot4k7_akk55s",
+   "file": "demo_n2__SEGMENT__seg_mwlot4k7_akk55s.mp3",
+   "size": 65324,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlot4k7_wv467w",
+    "fileName": "seg_mwlot4k7_akk55s.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlot4k7_y3db6u",
+   "file": "demo_n2__SEGMENT__seg_mwlot4k7_y3db6u.mp3",
+   "size": 68396,
+   "meta": {
+    "voice": "Charon",
+    "chapterId": "ch_mwlot4k7_wv467w",
+    "fileName": "seg_mwlot4k7_y3db6u.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlot6hc_o9wp1v",
+   "file": "demo_n2__SEGMENT__seg_mwlot6hc_o9wp1v.mp3",
+   "size": 94892,
+   "meta": {
+    "voice": "Kore",
+    "chapterId": "ch_mwlot6hc_g7l57c",
+    "fileName": "seg_mwlot6hc_o9wp1v.mp3"
+   }
+  },
+  {
+   "novelId": "demo_n2",
+   "kind": "SEGMENT",
+   "refId": "seg_mwlot6hc_szi5xm",
+   "file": "demo_n2__SEGMENT__seg_mwlot6hc_szi5xm.mp3",
+   "size": 31916,
+   "meta": {
+    "voice": "Aoede",
+    "chapterId": "ch_mwlot6hc_g7l57c",
+    "fileName": "seg_mwlot6hc_szi5xm.mp3"
+   }
+  }
+ ]
+}

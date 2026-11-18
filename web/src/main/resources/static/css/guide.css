@@ -241,6 +241,113 @@
   line-height: 1.8;
 }
 
+/* 試試看：範例內容 */
+.guide-demo {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px 20px;
+  margin: 16px 0;
+}
+
+.guide-demo-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eee;
+}
+
+.guide-demo-head > div:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+
+.guide-demo-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.guide-demo-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.guide-demo-progress .progress {
+  flex: 1;
+  width: auto;
+}
+
+.guide-demo-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 22px;
+  padding-top: 14px;
+}
+
+.guide-demo-col h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: none;
+}
+
+.guide-demo-char {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f1f3f5;
+  font-size: 13px;
+}
+
+.guide-demo-char .name {
+  font-weight: 600;
+}
+
+.guide-demo-char .aliases {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guide-demo-char .voice {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.guide-demo-audio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.guide-demo-audio audio {
+  width: 100%;
+  max-width: 320px;
+  height: 32px;
+}
+
+.guide-demo-audio .label {
+  white-space: nowrap;
+  color: #495057;
+}
+
+.guide-demo-audio .label .voice-tag {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--primary);
+  margin-left: 6px;
+}
+
 @media (max-width: 720px) {
   .guide-toc ol { columns: 1; }
 }
