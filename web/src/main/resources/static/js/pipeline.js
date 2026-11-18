@@ -278,10 +278,12 @@
     if (instructions) segment.instructions = instructions;
 
     const blob = await GW.synthesize([{ text: segment.text, voice: voice, instructions: instructions }]);
+    const durationMs = await DB.audio.durationMs(blob);
     await DB.audio.save(novel.id, 'SEGMENT', segment.id, blob, {
       chapterId: segment.chapterId || '',
       voice: voice,
-      fileName: 'seg-' + segment.id + '.mp3',
+      fileName: segment.id + '.mp3',
+      durationMs: durationMs,
     });
     segment.ttsStatus = 'DONE';
     if (onProgress) onProgress(100, '段落合成完成');
@@ -324,9 +326,11 @@
     }
     if (!items.length) throw new Error('本章沒有已合成的音檔');
     const blob = await GW.merge(items);
+    const durationMs = await DB.audio.durationMs(blob);
     await DB.audio.save(novel.id, 'CHAPTER', chapter.id, blob, {
       chapterIndex: chapter.index,
       fileName: 'chapter-' + chapter.index + '.mp3',
+      durationMs: durationMs,
     });
     return blob;
   }
@@ -354,8 +358,10 @@
     }
     if (!items.length) throw new Error('整本還沒有任何音檔，請先執行語音合成');
     const blob = await GW.merge(items);
+    const durationMs = await DB.audio.durationMs(blob);
     await DB.audio.save(novel.id, 'NOVEL', novel.id, blob, {
       fileName: (novel.title || 'novel') + '.mp3',
+      durationMs: durationMs,
     });
     return blob;
   }

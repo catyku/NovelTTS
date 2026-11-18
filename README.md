@@ -3,19 +3,72 @@
 小說 AI 分析 + TTS 語音合成系統。輸入小說純文字，AI 分解成「角色 × 段落」，
 再呼叫 OpenRouter 的 TTS 模型逐段發聲，輸出每段音檔、章節合併檔與整本 ZIP。
 
-![儀表板](docs/screenshots/dashboard.png)
+**不用註冊、也不用登入。** 打開就能用 —— 你的小說、角色與音檔都存在你自己的
+瀏覽器裡，伺服器只做無狀態的 AI 運算，不保存你的任何資料。OpenRouter API Key
+由你自己提供。
+
+![訪客模式設定](docs/screenshots/10-settings-guest.png)
 
 ## 這系統在做什麼
 
 ```
-小說純文字
-   ↓  AI 分析（chat/completions）
+小說純文字（存在你的瀏覽器）
+   ↓  AI 分析（chat/completions，經由無狀態閘道）
 切章 → 逐段判定「旁白 / 哪個角色說話」→ 抽出情緒與語氣
    ↓  音色指派（群組共用音色優先，否則手動指定）
 每個角色固定一個 voice_id + TTS 語氣指令
    ↓  TTS 合成（audio/speech，multi-speaker 一次請求多 turn）
 段落音檔 → 章節合併 → 整本合併 → ZIP 匯出
+        ↓  全部存回你的瀏覽器（IndexedDB）
 ```
+
+### 訪客模式：不需要帳密，資料留在你的瀏覽器
+
+打開網址就能用，不用註冊、也不用登入。
+
+| 資料 | 放在哪 |
+|---|---|
+| 小說內文、章節、角色、段落 | 你的瀏覽器 IndexedDB |
+| 音檔（MP3） | 你的瀏覽器 IndexedDB（Blob） |
+| 群組設定、音色指派 | 你的瀏覽器 IndexedDB |
+| OpenRouter API Key | 你的瀏覽器 localStorage |
+| 伺服器 | **不保存你的任何資料**，只做無狀態的 AI 運算 |
+
+伺服器這邊只有三件事是「全站共用」的預設值：音色庫、模型清單、模型定價。
+它們是建議值，你可以一鍵套用到自己的設定，也可以完全不用。
+
+**AI 運算怎麼在伺服器跑，資料卻不留下來？**
+
+瀏覽器把你的 Key 放在 `X-OpenRouter-Key` 標頭送給閘道，伺服器只在**那一次請求**
+的記憶體裡用它去呼叫 OpenRouter，然後把結果回傳。它不寫資料庫、不落盤、
+不記到 log 裡 —— 這點有實測過：容器 log 中 `sk-or-v1` 出現 0 次。
+
+```
+瀏覽器                        伺服器（無狀態）              OpenRouter
+  │                              │                          │
+  │  POST /api/gateway/analyze   │                          │
+  │  X-OpenRouter-Key: sk-...    │                          │
+  │ ───────────────────────────> │ ── chat/completions ───> │
+  │                              │ <── 段落 JSON ────────── │
+  │ <─────────────────────────── │                          │
+  │  （結果寫進 IndexedDB）      │  ← 不保留任何東西        │
+```
+
+伺服器仍需要 ffmpeg 做 PCM→MP3 轉檔與音檔合併，所以這兩步放在伺服器端，
+但同樣是無狀態的：收位元組、合併、回傳，不留檔案。瀏覽器不需要載入
+30MB 的 ffmpeg.wasm。
+
+**公開服務的保護**
+
+- 每個 IP 每分鐘最多 30 次閘道呼叫，超過回 429（以 Cloudflare 傳來的
+  `CF-Connecting-IP` 為準，不信任可以偽造的 `X-Forwarded-For`）
+- 寫入型 API（`/api/novels`、`/api/groups` 等）仍然需要登入
+- 訪客模式的頁面不查資料庫 —— 就算登入後的管理資料存在 DB，也不會被渲染給訪客
+
+**想跨裝置續用？**
+
+登入帳號模式（選用）會把作品存到伺服器資料庫，可以跨裝置使用。
+但目前訪客模式的資料不會自動同步到帳號 —— 兩邊是各自獨立的。
 
 ### 小說群組：讓音色跨集一致
 
@@ -162,7 +215,22 @@ mvn -pl web spring-boot:run
 以下截圖取自實際部署環境，資料由真實 OpenRouter（`google/gemini-3-flash-preview` +
 `google/gemini-3.8-flash-tts`）產生，非 mock。
 
-#### 儀表板
+#### 訪客模式的設定頁
+
+不用登入就能用。填入你自己的 OpenRouter API Key —— 這把 Key 只存在你的瀏覽器
+localStorage，伺服器不會保存。畫面下方是全站共用的音色庫與模型建議值，
+可以一鍵套用到自己的設定。
+
+![訪客模式設定](docs/screenshots/10-settings-guest.png)
+
+#### 訪客模式的小說詳情
+
+匯入小說 → 觸發 AI 分析 → 觸發語音合成 → 章節合併 → 下載 ZIP，
+全程都在瀏覽器完成。章節與音檔列表可以直接試聽。
+
+![訪客模式小說詳情](docs/screenshots/11-guest-novel-detail.png)
+
+#### 儀表板（帳號模式）
 
 作業進度、音檔數量與最近執行紀錄。
 
@@ -204,7 +272,8 @@ mvn -pl web spring-boot:run
 
 #### 設定
 
-Provider（API Key 以 AES-GCM 加密落庫，畫面僅顯示遮蔽值）、模型、備援模型、音色庫。
+帳號模式下的設定：Provider（API Key 以 AES-GCM 加密落庫，畫面僅顯示遮蔽值）、
+模型、備援模型、音色庫。訪客模式則是把你自己的 Key 存在瀏覽器，見上方截圖。
 
 ![設定](docs/screenshots/settings.png)
 
@@ -217,8 +286,24 @@ Provider（API Key 以 AES-GCM 加密落庫，畫面僅顯示遮蔽值）、模�
 ### 測試
 
 ```bash
-mvn test    # 50 個單元測試（app 46 + web 4）
+mvn test    # 66 個單元測試（app 51 + web 15）
 ```
+
+前端另有三套整合測試（Node + fake-indexeddb，直接載入實際部署的 JS 檔）：
+
+```bash
+cd tools/gateway-test
+
+# 離線驗證 pipeline 邏輯（stub fetch，不呼叫 OpenRouter）
+node pipeline-test.js
+
+# 端到端：資料層 + 閘道 + 真實 OpenRouter
+OPENROUTER_API_KEY=sk-or-v1-... node test.js
+OPENROUTER_API_KEY=sk-or-v1-... node full-pipeline-test.js
+```
+
+`full-pipeline-test.js` 會實際跑完整條線：切章 → 分析 → 角色 → 群組音色 →
+合成 → 合併本章 → 合併整本 → ZIP，並驗證匯出資料不含 API Key。
 
 ### 端到端驗證（不需真實 API Key）
 
@@ -398,6 +483,49 @@ UPDATE app_user SET password_hash = '$2a$10$...', must_change_password = TRUE WH
 SQLEOF
 ```
 
+
+## 對外 API：無狀態 AI 閘道
+
+這些端點**不需要登入**，因為它們不保存任何資料 —— Key 由呼叫端在每次請求
+用標頭帶進來。
+
+| 端點 | 方法 | 說明 |
+|---|---|---|
+| `/api/gateway/analyze` | POST | 章節文字 → 段落與角色判定 |
+| `/api/gateway/synthesize` | POST | turns → MP3（server 端 PCM→MP3） |
+| `/api/gateway/merge` | POST | 多個 MP3 → 合併後的 MP3 |
+| `/api/gateway/zip` | POST | 多個檔案 → ZIP |
+| `/api/gateway/models` | GET | 可用的語音模型 |
+| `/api/gateway/defaults` | GET | 全站預設值（音色、模型） |
+
+請求標頭：
+
+| 標頭 | 必填 | 說明 |
+|---|---|---|
+| `X-OpenRouter-Key` | 是 | 使用者的 OpenRouter API Key |
+| `X-OpenRouter-Base-Url` | 否 | 覆寫 base URL（預設 `https://openrouter.ai/api/v1`） |
+
+範例：
+
+```bash
+curl -X POST https://<your-domain>/api/gateway/analyze \
+  -H 'Content-Type: application/json' \
+  -H "X-OpenRouter-Key: $OPENROUTER_API_KEY" \
+  -d '{"chapterTitle":"第一章 夜歸","chapterContent":"林晚推開舊書店的大門。"}'
+```
+
+回應：
+
+```json
+{
+  "segments": [
+    { "seq": 1, "type": "NARRATION", "text": "林晚推開舊書店的大門。" },
+    { "seq": 2, "type": "DIALOGUE", "speaker_name": "林晚", "text": "我來了。" }
+  ]
+}
+```
+
+**限制**：每個來源 IP 每分鐘 30 次（以 Cloudflare 的 `CF-Connecting-IP` 為準）。
 
 ## 小說群組 API
 

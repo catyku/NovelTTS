@@ -298,6 +298,33 @@
       if (!row || !row.blob) return null;
       return URL.createObjectURL(row.blob);
     },
+
+    /**
+     * 量測音檔長度（毫秒）。
+     *
+     * <p>用 Web Audio API 解碼音訊取得 duration。瀏覽器不支援或解碼失敗時
+     * 回傳 null（呼叫端顯示「-」），不讓整個流程中斷。
+     *
+     * @param {Blob} blob 音檔
+     * @returns {Promise<number|null>}
+     */
+    async durationMs(blob) {
+      if (!blob) return null;
+      const Ctx = global.AudioContext || global.webkitAudioContext;
+      if (!Ctx) return null;
+      let ctx = null;
+      try {
+        ctx = new Ctx();
+        const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+        return Math.round(buf.duration * 1000);
+      } catch (e) {
+        return null;
+      } finally {
+        if (ctx) {
+          try { await ctx.close(); } catch (e) { /* 忽略關閉錯誤 */ }
+        }
+      }
+    },
   };
 
   window.NovelTtsDB = {
