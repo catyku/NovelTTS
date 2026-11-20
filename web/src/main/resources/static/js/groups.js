@@ -42,6 +42,21 @@ function fillSelect(select, options) {
  * 失敗或為空時退回常見音色 + 設定值，避免頁面壞掉。
  */
 async function loadVoiceLibrary() {
+  // 優先用使用者自己的音色庫（IndexedDB）
+  try {
+    if (window.NovelTtsDB && window.NovelTtsDB.voices) {
+      const mine = await window.NovelTtsDB.voices.listEnabled();
+      if (mine.length) {
+        VOICES = mine.map(v => ({
+          value: v.voiceId,
+          label: (v.displayName || v.voiceId) + '（' + v.voiceId + '）',
+        }));
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn('無法取得我的音色庫，改用共用音色庫', e);
+  }
   try {
     const list = await api('/api/settings/voices');
     if (Array.isArray(list) && list.length) {

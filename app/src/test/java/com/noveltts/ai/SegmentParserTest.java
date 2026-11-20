@@ -32,6 +32,21 @@ class SegmentParserTest {
     }
 
     @Test
+    void JSON被截斷時救回已完成段落() {
+        // 模擬模型輸出到一半被 max_tokens 截斷：陣列沒有收尾
+        String truncated = "{\"segments\":["
+                + "{\"seq\":1,\"type\":\"NARRATION\",\"text\":\"第一段。\"},"
+                + "{\"seq\":2,\"type\":\"DIALOGUE\",\"character_name\":\"林晚\",\"text\":\"「你來了。」\"},"
+                + "{\"seq\":3,\"type\":\"NARRATION\",\"text\":\"第三段還沒寫完";
+
+        SegmentAnalysis result = parser.parse(truncated);
+
+        assertThat(result.segments()).hasSize(2);
+        assertThat(result.segments().get(0).text()).isEqualTo("第一段。");
+        assertThat(result.segments().get(1).character_name()).isEqualTo("林晚");
+    }
+
+    @Test
     void 去除markdown圍欄後解析() {
         String withFence = "```json\n{\"segments\":[{\"seq\":1,\"type\":\"NARRATION\",\"text\":\"測試\"}]}\n```";
 

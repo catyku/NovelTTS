@@ -88,8 +88,35 @@ public class GatewayService {
         messages.add(new ChatMessage("user", PromptBuilder.userPrompt(chapter)));
 
         String content = callChatWithFallback(provider, model, fallbackModelId, messages,
-                temperature, maxTokens, extraParams);
+                temperature, effectiveAnalyzeMaxTokens(chapterContent, maxTokens), extraParams);
         return segmentParser.parse(content);
+    }
+
+    /**
+     * 分析用的 max_tokens 自動放大。
+     *
+     * <p>章節越長，切出的段落越多，每段在 JSON 裡的開銷也越大
+     * （欄位名、跳脫字元）。實測 3000 字的章節可能需要一萬出頭的 token。
+     * 用呼叫端給的 8000 常常不夠，JSON 就被截斷 —— 整章分析失敗。
+     *
+     * <p>估算方式：中文一字大約 1.5～2 個 token（含 JSON 結構），
+     * 段落數再乘上一個係數。取兩者的較大值，並給下限與上限。
+     *
+     * @param chapterContent 章節內文
+     * @param requested 使用者（或前端設定）指定的值；null 表示沒指定
+     */
+    private int effectiveAnalyzeMaxTokens(String chapterContent, Integer requested) {
+        int chars = chapterContent == null ? 0 : chapterContent.length();
+        // 每 40 字大約切一個段落；每段在 JSON 裡約 80 個 token
+        int estimated = (int) Math.ceil(chars / 40.0 * 80);
+        int floor = 8000;
+        int ceiling = 32000;
+        int needed = Math.min(ceiling, Math.max(floor, estimated));
+        if (requested == null || requested <= 0) {
+            return needed;
+        }
+        // 呼叫端指定得比估算少時，以估算為準 —— 指定值不足會導致截斷
+        return Math.max(requested, needed);
     }
 
     /**

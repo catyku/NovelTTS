@@ -33,26 +33,55 @@
   /** 已建立的 object URL，重繪或離開頁面時要 revoke。 */
   let AUDIO_URLS = [];
 
-  /** 取得音色清單（server 端共用音色庫；讀不到就用備用清單）。 */
+  /**
+   * 取得音色清單。
+   *
+   * <p>優先用使用者自己的音色庫（IndexedDB，可從 OpenRouter 匯入、可自訂名稱與分類）；
+   * 空的話才退回 server 的共用音色庫，再不行就用內建備援清單。
+   */
   async function loadVoices() {
     if (VOICE_CACHE) return VOICE_CACHE;
     let rows = [];
     try {
-      rows = await window.api('/api/settings/voices');
+      if (window.NovelTtsDB && window.NovelTtsDB.voices) {
+        rows = await window.NovelTtsDB.voices.listEnabled();
+      }
     } catch (e) {
       rows = [];
+    }
+    if (!rows || !rows.length) {
+      try {
+        const server = await window.api('/api/settings/voices');
+        if (Array.isArray(server) && server.length) {
+          rows = server.map((v) => ({
+            voiceId: v.voiceId,
+            displayName: v.displayName,
+            gender: v.gender || '',
+            styleDesc: v.styleDesc || '',
+            model: v.model || '',
+          }));
+        }
+      } catch (e) {
+        rows = [];
+      }
     }
     if (!rows || !rows.length) {
       VOICE_CACHE = FALLBACK_VOICES.slice();
     } else {
       VOICE_CACHE = rows.map((v) => ({
         voiceId: v.voiceId,
-        displayName: v.displayName,
+        displayName: v.displayName || v.voiceId,
         gender: v.gender || '',
         styleDesc: v.styleDesc || '',
+        model: v.model || '',
       }));
     }
     return VOICE_CACHE;
+  }
+
+  /** 清掉音色快取（音色庫改動後要呼叫，讓下次重新載入）。 */
+  function clearVoiceCache() {
+    VOICE_CACHE = null;
   }
 
   /** 依 voiceId 找顯示名稱。 */
@@ -62,21 +91,96 @@
     return found ? found.displayName : voiceId;
   }
 
-  /** 產生音色下拉選項。 */
+  /**
+   * 產生音色下拉選項。
+   *
+   * <p>用 optgroup 依模型分組 —— 音色庫可能有數百筆（OpenRouter 上
+   * Gemini 30 個、Deepgram 90 個、MAI 97 個…），不分組根本找不到想要的。
+   *
+   * <p>分組也帶出另一個重要資訊：voice_id 是「模型內」的概念，
+   * Gemini 的 Kore 不能用在 ElevenLabs 上，所以分組讓人不會選錯。
+   */
   function voiceOptions(selected, includeEmpty, emptyText) {
     const opts = [];
     if (includeEmpty) {
       opts.push(window.el('option', { value: '', text: emptyText || '（沿用角色）' }));
     }
-    (VOICE_CACHE || FALLBACK_VOICES).forEach((v) => {
-      const attrs = {
-        value: v.voiceId,
-        text: v.displayName + (v.voiceId ? '（' + v.voiceId + '）' : ''),
-      };
-      if (selected && selected === v.voiceId) attrs.selected = 'selected';
-      opts.push(window.el('option', attrs));
-    });
+    const voices = VOICE_CACHE || FALLBACK_VOICES;
+
+    // 依模型分組，組內依 sortOrder
+    const groups = new Map();
+    for (const v of voices) {
+      const key = v.model || '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(v);
+    }
+
+    for (const [model, list] of groups) {
+      const label = model ? (MODEL_LABELS[model] || model) : '未指定模型';
+      const group = window.el('optgroup', { label: label });
+      for (const v of list) {
+        const attrs = {
+          value: v.voiceId,
+          text: v.displayName + (v.voiceId ? '（' + v.voiceId + '）' : ''),
+        };
+        if (selected && selected === v.voiceId) attrs.selected = 'selected';
+        group.appendChild(window.el('option', attrs));
+      }
+      opts.push(group);
+    }
     return opts;
+  }
+
+  /**
+   * 模型 id → 中文名。
+   *
+   * <p>放在這裡而不是只放在 voices.js，是因為所有用到音色下拉的頁面
+   * （角色、段落、小說詳情）不一定載入 voices.js。
+   */
+  const MODEL_LABELS = {
+    'google/gemini-3.8-flash-tts': 'Gemini 3.8 Flash TTS',
+    'google/gemini-3.8-flash-lite-tts': 'Gemini 3.8 Flash Lite TTS',
+    'google/gemini-3.1-flash-tts-preview': 'Gemini 3.1 Flash TTS',
+    'mistralai/voxtral-mini-tts-3-0': 'Voxtral Mini TTS 3',
+    'mistralai/voxtral-mini-tts-2603': 'Voxtral Mini TTS',
+    'elevenlabs/eleven-v3': 'ElevenLabs v3',
+    'elevenlabs/eleven-v4': 'ElevenLabs v4',
+    'elevenlabs/eleven-turbo-v2.5': 'ElevenLabs Turbo v2.5',
+    'elevenlabs/eleven-flash-v2.5': 'ElevenLabs Flash v2.5',
+    'elevenlabs/eleven-multilingual-v2': 'ElevenLabs Multilingual v2',
+    'microsoft/mai-voice-2.1': 'MAI Voice 2.1',
+    'microsoft/mai-voice-2.1-flash': 'MAI Voice 2.1 Flash',
+    'microsoft/mai-voice-2': 'MAI Voice 2',
+    'microsoft/mai-voice-2-flash': 'MAI Voice 2 Flash',
+    'deepgram/aura-2': 'Deepgram Aura 2',
+    'deepgram/flux-tts': 'Deepgram Flux',
+    'hexgrad/kokoro-82m': 'Kokoro 82M',
+    'sesame/csm-1b': 'Sesame CSM-1B',
+    'speechify/simba-3.5': 'Speechify Simba 3.5',
+    'canopylabs/orpheus-3b-0.1-ft': 'Orpheus 3B',
+  };
+
+  /** 找出某個音色所屬的模型。
+   *
+   * <p>voice_id 是模型內的概念 —— 合成時必須用音色所屬的模型，
+   * 否則 EitherLabs 會找不到這個 voice 而報錯，或音色跟對不上。
+   *
+   * @param {string} voiceId
+   * @returns {string} 模型 id；查不到回傳空字串
+   */
+  async function modelOfVoice(voiceId) {
+    if (!voiceId) return '';
+    const voices = VOICE_CACHE || FALLBACK_VOICES;
+    const matches = voices.filter((v) => v.voiceId === voiceId);
+    if (!matches.length) return '';
+    // 同一個 voice_id 可能出現在多個模型（例如 Charon 在三個 Gemini 版本都有）。
+    // 優先選目前設定的 TTS 模型，否則使用者設定的模型跟實際合成用的模型會不一致。
+    try {
+      const settings = await DB.settings.get();
+      const preferred = matches.find((v) => v.model === settings.ttsModel);
+      if (preferred) return preferred.model;
+    } catch (e) { /* 忽略 */ }
+    return matches[0].model || '';
   }
 
   /** 釋放所有已建立的 object URL。 */
@@ -200,49 +304,142 @@
   }
 
   /**
+   * 章節的唯一鍵：index + 內容的簡易雜湊。
+   *
+   * <p>用來判斷「這一章跟上次分析的是同一章」——
+   * 內容沒變就沿用結果，內容改了才重新分析。
+   */
+  function chapterKey(chapter) {
+    const content = chapter.content || '';
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      hash = ((hash << 5) - hash + content.charCodeAt(i)) | 0;
+    }
+    return chapter.index + ':' + (hash >>> 0) + ':' + content.length;
+  }
+
+  /**
+   * 分析單一章節 → 章節物件（含段落）。
+   *
+   * @param {object} r splitChapters 的單一章節
+   */
+  async function analyzeOneChapter(r) {
+    const result = await GW.analyze({ chapterTitle: r.title, chapterContent: r.content });
+    const list = (result && result.segments) || [];
+    const chapterId = window.uid('ch');
+    const segments = list.map((s, idx) => ({
+      id: window.uid('seg'),
+      seq: idx + 1,
+      chapterId: chapterId,
+      type: s.type === 'DIALOGUE' ? 'DIALOGUE' : 'NARRATION',
+      characterId: null,
+      characterName: s.character_name || null,
+      speakerName: s.speaker_name || s.character_name || '旁白',
+      text: s.text || '',
+      emotion: s.emotion || '',
+      styleHint: s.style_hint || '',
+      instructions: s.style_instructions || '',
+      voice: '',
+      ttsStatus: 'PENDING',
+    }));
+    return {
+      id: chapterId,
+      index: r.index,
+      title: r.title || ('第 ' + r.index + ' 章'),
+      content: r.content,
+      charCount: (r.content || '').length,
+      status: 'ANALYZED',
+      segments: segments,
+    };
+  }
+
+  /**
    * 分析整本小說：切章 → 逐章呼叫閘道分析 → 建立／更新角色 → 套用群組共用音色。
+   *
+   * <p><b>可續傳</b>：每分析完一章就存回 IndexedDB，並在
+   * {@code novel.analysisProgress} 記錄進度。中途失敗（網路、額度、
+   * 上游偶發錯誤）時，已完成的章節不會遺失；再次按分析會從中斷處接續，
+   * 不會從頭再跑一遍。
+   *
+   * <p>單章失敗不中斷整本 —— 那一章標記為 FAILED 後繼續下一章，
+   * 最後統一回報有哪幾章沒成功。
+   *
+   * <p>{@code opts.force = true} 時忽略已完成的章節，全部重跑。
    *
    * @param {object} novel
    * @param {function} onProgress (pct, label)
+   * @returns {Promise<object>} 分析後的小說（含 analysisProgress）
    */
-  async function analyzeNovel(novel, onProgress) {
+  async function analyzeNovel(novel, onProgress, opts) {
+    const options = opts || {};
+    const force = options.force === true;
     const settings = await DB.settings.get();
     const maxChars = settings.chapterMaxChars || 3000;
     const raw = LOGIC.splitChapters(novel.content || '', maxChars);
     if (!raw.length) throw new Error('小說內容是空的，沒有可分析的章節');
 
     const group = await loadGroup(novel);
+
+    // 續傳：沿用先前已分析完成的章節。
+    // 章節以「index + 內容雜湊」配對 —— 使用者改了內容就會重新分析那一章。
+    const previous = Array.isArray(novel.chapters) ? novel.chapters : [];
+    const prevByKey = new Map(previous.map((c) => [chapterKey(c), c]));
     const chapters = [];
+    const failed = [];
+
     for (let i = 0; i < raw.length; i++) {
       const r = raw[i];
-      if (onProgress) onProgress(Math.round((i / raw.length) * 100), '分析第 ' + (i + 1) + '/' + raw.length + ' 章：' + (r.title || ''));
-      const result = await GW.analyze({ chapterTitle: r.title, chapterContent: r.content });
-      const list = (result && result.segments) || [];
-      const chapterId = window.uid('ch');
-      const segments = list.map((s, idx) => ({
-        id: window.uid('seg'),
-        seq: idx + 1,
-        chapterId: chapterId,
-        type: s.type === 'DIALOGUE' ? 'DIALOGUE' : 'NARRATION',
-        characterId: null,
-        characterName: s.character_name || null,
-        speakerName: s.speaker_name || s.character_name || '旁白',
-        text: s.text || '',
-        emotion: s.emotion || '',
-        styleHint: s.style_hint || '',
-        instructions: s.style_instructions || '',
-        voice: '',
-        ttsStatus: 'PENDING',
-      }));
-      chapters.push({
-        id: chapterId,
-        index: r.index,
-        title: r.title || ('第 ' + r.index + ' 章'),
-        content: r.content,
-        charCount: (r.content || '').length,
-        status: 'ANALYZED',
-        segments: segments,
-      });
+      const key = chapterKey({ index: r.index, content: r.content });
+      const done = prevByKey.get(key);
+
+      if (!force && done && done.status === 'ANALYZED' && (done.segments || []).length) {
+        // 這章上次已經分析成功 —— 直接沿用，不重跑
+        chapters.push(done);
+        novel.analysisProgress = {
+          done: chapters.length, total: raw.length, failed: failed.slice(),
+          updatedAt: Date.now(),
+        };
+        await DB.novels.save(novel);
+        if (onProgress) {
+          onProgress(Math.round((chapters.length / raw.length) * 100),
+            '分析第 ' + (i + 1) + '/' + raw.length + ' 章（沿用已完成）');
+        }
+        continue;
+      }
+
+      if (onProgress) {
+        onProgress(Math.round((i / raw.length) * 100),
+          '分析第 ' + (i + 1) + '/' + raw.length + ' 章：' + (r.title || ''));
+      }
+
+      let chapter;
+      try {
+        chapter = await analyzeOneChapter(r);
+      } catch (e) {
+        // 單章失敗不中斷整本
+        failed.push({ index: r.index, title: r.title || '', message: String(e.message || e) });
+        chapter = {
+          id: window.uid('ch'),
+          index: r.index,
+          title: r.title || ('第 ' + r.index + ' 章'),
+          content: r.content,
+          charCount: (r.content || '').length,
+          status: 'FAILED',
+          error: String(e.message || e),
+          segments: [],
+        };
+      }
+      chapters.push(chapter);
+
+      // 每章完成就存檔 —— 中途中斷也不會遺失已完成的章節
+      novel.chapters = chapters;
+      novel.analysisProgress = {
+        done: chapters.length,
+        total: raw.length,
+        failed: failed.slice(),
+        updatedAt: Date.now(),
+      };
+      await DB.novels.save(novel);
     }
 
     novel.chapters = chapters;
@@ -259,8 +456,22 @@
       s.instructions = resolveInstructions(s, c, group, settings);
     }
 
-    novel.status = 'ANALYZED';
+    novel.status = failed.length ? 'PARTIAL' : 'ANALYZED';
+    novel.analysisProgress = {
+      done: chapters.length,
+      total: raw.length,
+      failed: failed.slice(),
+      updatedAt: Date.now(),
+    };
     await DB.novels.save(novel);
+
+    if (failed.length) {
+      // 有章節失敗 → 說明是哪幾章、為什麼，讓使用者知道再按一次能續傳
+      const detail = failed.map((f) => '第 ' + f.index + ' 章：' + f.message).join('；');
+      throw new Error('有 ' + failed.length + ' 章分析失敗（已完成的章節都保留，'
+        + '再次按「觸發 AI 分析」會從中斷處繼續）：' + detail);
+    }
+
     if (onProgress) onProgress(100, '分析完成：' + chapters.length + ' 章 / ' + allSegments.length + ' 段');
     return novel;
   }
@@ -277,7 +488,14 @@
     segment.voice = voice;
     if (instructions) segment.instructions = instructions;
 
-    const blob = await GW.synthesize([{ text: segment.text, voice: voice, instructions: instructions }]);
+    // 音色必須搭配它所屬的模型 —— voice_id 是模型內的概念，
+    // 用錯模型會找不到這個 voice（400），或出來的音色跟選的不一樣。
+    // modelOfVoice 是 async（要讀設定才能判斷優先模型），一定要 await。
+    const voiceModel = await modelOfVoice(voice);
+    const blob = await GW.synthesize(
+      [{ text: segment.text, voice: voice, instructions: instructions }],
+      (typeof voiceModel === 'string' && voiceModel) ? { model: voiceModel } : undefined
+    );
     const durationMs = await DB.audio.durationMs(blob);
     await DB.audio.save(novel.id, 'SEGMENT', segment.id, blob, {
       chapterId: segment.chapterId || '',
@@ -459,6 +677,9 @@
     loadVoices: loadVoices,
     voiceName: voiceName,
     voiceOptions: voiceOptions,
+    clearVoiceCache: clearVoiceCache,
+    modelOfVoice: modelOfVoice,
+    modelLabel: function (id) { return MODEL_LABELS[id] || id; },
     revokeAudioUrls: revokeAudioUrls,
     createAudioElement: createAudioElement,
     novelStats: novelStats,
@@ -469,6 +690,8 @@
     upsertCharacters: upsertCharacters,
     applyGroupVoices: applyGroupVoices,
     analyzeNovel: analyzeNovel,
+    analyzeOneChapter: analyzeOneChapter,
+    chapterKey: chapterKey,
     synthesizeSegment: synthesizeSegment,
     synthesizeChapter: synthesizeChapter,
     mergeChapterAudio: mergeChapterAudio,

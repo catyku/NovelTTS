@@ -29,17 +29,22 @@
     const result = [];
     const paragraphs = text.split(/\n\s*\n/);
     let sb = '';
-    let index = 1;
+    // 用區塊編號產生標題，不要用會被 ++ 順延的 index ——
+    // 先 push 再 ++ 的寫法會讓第一段拿到「第 2 段」。
+    const push = () => {
+      const n = result.length + 1;
+      result.push({ index: n, title: `第 ${n} 段`, content: sb.trim() });
+    };
     for (const p of paragraphs) {
       if (!p.trim()) continue;
       if (sb.length + p.length + 2 > maxChars && sb.length > 0) {
-        result.push({ index: index++, title: `第 ${index} 段`, content: sb.trim() });
+        push();
         sb = '';
       }
       sb += p.trim() + '\n\n';
     }
     if (sb.length > 0) {
-      result.push({ index: index++, title: `第 ${index} 段`, content: sb.trim() });
+      push();
     }
     return result;
   }

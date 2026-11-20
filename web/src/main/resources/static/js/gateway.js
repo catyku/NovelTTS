@@ -51,7 +51,13 @@
       if (response.status === 401 || json.error === 'missing_api_key') {
         return 'OpenRouter API Key 無效或尚未設定，請到「設定」頁填寫你的 Key。';
       }
-      return json.message || json.error || json.detail || text;
+      // detail 通常是真正的失敗原因（伺服器 exception 訊息），
+      // 只顯示 error 會讓使用者只看到「處理失敗」這種無用的字眼。
+      const reason = json.detail || json.message || json.error;
+      if (json.error && json.detail && json.error !== json.detail) {
+        return json.error + '：' + json.detail;
+      }
+      return reason || text;
     } catch (e) {
       return text || `HTTP ${response.status}`;
     }

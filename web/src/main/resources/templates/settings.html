@@ -59,7 +59,11 @@
       套用後會存進你的瀏覽器，不會影響其他人。
     </p>
 
-    <h3>共用音色庫</h3>
+    <h3>共用音色庫（網站提供）</h3>
+    <p class="muted">
+      這些是網站預先整理好的常用音色，點「設為旁白」或「設為預設」可直接套用。
+      想自己管理全部音色，請往下看「我的音色庫」。
+    </p>
     <div id="voiceList" style="margin-top:12px"></div>
 
     <h3>共用模型預設值</h3>
@@ -72,6 +76,61 @@
       </label>
     </div>
     <div id="modelList" style="margin-top:12px"></div>
+  </div>
+
+  <h2>我的音色庫</h2>
+  <div class="panel">
+    <p class="muted">
+      音色庫存在你的瀏覽器，可以自由新增、改名、加分類、調整順序與停用。
+      OpenRouter 上支援的語音模型遠多於網站預設的 6 個 ——
+      Gemini TTS 有 30 個音色，ElevenLabs、Deepgram、Microsoft 等模型合計還有數百個。
+    </p>
+
+    <h3>從 OpenRouter 匯入音色</h3>
+    <p class="muted">
+      匯入會呼叫 <code>/api/gateway/models</code>，需要先設定 API Key。
+      已匯入過的音色不會被覆蓋，你的改名與分類都會保留。
+    </p>
+    <div class="row">
+      <label>模型
+        <select id="vModel"><option value="">載入中…</option></select>
+      </label>
+      <label>分類（可留空）
+        <input type="text" id="vCategory" placeholder="例如：旁白 / 主角 / 配角">
+      </label>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" id="vImportOne">匯入這個模型的音色</button>
+      <button class="btn" id="vImportAll">匯入全部模型</button>
+      <button class="btn" id="vSeed">補入網站精選音色</button>
+      <button class="btn btn-danger" id="vClear">清空我的音色庫</button>
+      <span id="vMsg" class="muted"></span>
+    </div>
+
+    <h3>篩選</h3>
+    <div class="row">
+      <label>搜尋<input type="text" id="vSearch" placeholder="名稱或 voice_id"></label>
+      <label>模型<select id="vFilterModel"><option value="">全部</option></select></label>
+      <label>分類<select id="vFilterCategory"><option value="">全部</option></select></label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="vOnlyEnabled"> 只看已啟用
+      </label>
+    </div>
+
+    <div id="vStats" class="muted" style="margin:8px 0"></div>
+    <div id="vTable" style="margin-top:12px"></div>
+    <div id="vPager" class="row-inline" style="margin-top:10px; justify-content:center"></div>
+
+    <h3>批次重新分類</h3>
+    <p class="muted">
+      把目前篩選出來的音色一次改成同一個分類，或一次啟用／停用。
+    </p>
+    <div class="row">
+      <label>套用分類<input type="text" id="vBulkCategory" placeholder="分類名稱"></label>
+      <button class="btn" id="vBulkApply">套用到篩選結果</button>
+      <button class="btn" id="vBulkEnable">啟用篩選結果</button>
+      <button class="btn" id="vBulkDisable">停用篩選結果</button>
+    </div>
   </div>
 
   <h2>你的模型</h2>
@@ -130,6 +189,8 @@
 <script th:src="@{/js/logic.js}"></script>
 <script th:src="@{/js/gateway.js}"></script>
 <script th:src="@{/js/common.js}"></script>
+<script th:src="@{/js/voices.js}"></script>
+<script th:src="@{/js/voice-library.js}"></script>
 <script th:src="@{/js/settings.js}"></script>
 </body>
 </html>

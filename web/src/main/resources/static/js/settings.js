@@ -15,6 +15,25 @@ const FALLBACK_VOICE_IDS = [
 
 /** 載入共用音色庫；失敗時退回常見音色。 */
 async function loadVoiceLibrary() {
+  // 優先用使用者自己的音色庫（IndexedDB）
+  try {
+    if (window.NovelTtsDB && window.NovelTtsDB.voices) {
+      const mine = await window.NovelTtsDB.voices.listEnabled();
+      if (mine.length) {
+        return mine.map(v => ({
+          value: v.voiceId,
+          label: (v.displayName || v.voiceId) + '（' + v.voiceId + '）',
+          displayName: v.displayName || v.voiceId,
+          voiceId: v.voiceId,
+          model: v.model || '',
+          gender: v.gender || '',
+          styleDesc: v.styleDesc || '',
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('無法取得我的音色庫，改用全站音色庫', e);
+  }
   try {
     const list = await api('/api/settings/voices');
     if (Array.isArray(list) && list.length) {

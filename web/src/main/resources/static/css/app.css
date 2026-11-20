@@ -94,6 +94,22 @@ textarea { min-height: 180px; resize: vertical; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 180px; }
 
+/* ---------- 音色庫管理 ---------- */
+.v-name-input { min-width: 130px; }
+.v-cat-input { min-width: 110px; }
+.v-style-input { min-width: 150px; }
+.row-inline { display: inline-flex; gap: 4px; }
+.checkbox-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 0 auto; min-width: auto;
+}
+.checkbox-label input { width: auto; }
+#vTable table { font-size: 0.92rem; }
+#vTable td { vertical-align: middle; }
+#vTable input[type=text] { padding: 4px 6px; }
+#vPager { display: flex; gap: 8px; align-items: center; }
+#vPager .btn[disabled] { opacity: 0.4; cursor: default; }
+
 .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #e9ecef; }
 .badge-PENDING { background: #e9ecef; }
 .badge-READY, .badge-SYNTHESIZED, .badge-DONE, .badge-SUCCESS { background: #d3f9d8; color: #2b8a3e; }

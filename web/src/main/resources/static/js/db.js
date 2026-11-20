@@ -12,13 +12,14 @@
  * - audio       音檔（Blob），key = "<novelId>:<kind>:<refId>"
  * - settings    使用者設定（單筆）
  * - generations AI 生成小說的歷史記錄（含完整正文）
+ * - voices     使用者的音色庫（自訂名稱、分類、排序、啟用狀態）
  */
 (function (global) {
   'use strict';
 
   const DB_NAME = 'novel-tts';
-  const DB_VERSION = 2;
-  const STORES = ['novels', 'groups', 'audio', 'settings', 'generations'];
+  const DB_VERSION = 3;
+  const STORES = ['novels', 'groups', 'audio', 'settings', 'generations', 'voices'];
 
   let dbPromise = null;
 
@@ -357,9 +358,113 @@
     },
   };
 
+  /**
+   * 音色庫。
+   *
+   * <p>每筆音色：
+   * <pre>
+   * {
+   *   id: 'modelId::voiceId',   // 複合鍵，同一模型下的 voice_id 唯一
+   *   model: 'google/gemini-3.8-flash-tts',
+   *   voiceId: 'Kore',
+   *   displayName: '穩健女性',   // 使用者自訂
+   *   category: '旁白',          // 使用者自訂分類（自由文字）
+   *   gender: 'female',         // 來源模型的資訊（唯讀參考）
+   *   styleDesc: '沉穩、有敘事感',
+   *   enabled: true,            // 是否納入音色下拉選單
+   *   sortOrder: 10,            // 顯示順序，越小越前面
+   *   source: 'openrouter',     // 'openrouter' | 'builtin' | 'custom'
+   *   builtin: false,           // 是否為伺服器種子音色
+   *   updatedAt: 1730000000000
+   * }
+   * </pre>
+   */
+  const voices = {
+    /** 全部音色，依 sortOrder 與 displayName 排序。 */
+    async list() {
+      const rows = await store.getAll('voices');
+      return rows.sort((a, b) => {
+        const d = (a.sortOrder || 0) - (b.sortOrder || 0);
+        if (d !== 0) return d;
+        return String(a.displayName || '').localeCompare(String(b.displayName || ''), 'zh-Hant');
+      });
+    },
+
+    /** 只有啟用中的音色 —— 這才是下拉選單要用的。 */
+    async listEnabled() {
+      const rows = await voices.list();
+      return rows.filter((v) => v.enabled !== false);
+    },
+
+    async get(id) {
+      return store.get('voices', id);
+    },
+
+    async save(voice) {
+      const now = Date.now();
+      const existing = await store.get('voices', voice.id);
+      const row = Object.assign({}, existing, voice, { updatedAt: now });
+      await store.put('voices', row);
+      return row;
+    },
+
+    /** 批次儲存（匯入音色時用）。 */
+    async saveMany(list) {
+      const now = Date.now();
+      for (const v of list) {
+        const existing = await store.get('voices', v.id);
+        // 已存在的項目不覆蓋使用者的自訂名稱、分類與排序
+        await store.put('voices', Object.assign({}, existing, v, { updatedAt: now }));
+      }
+    },
+
+    async remove(id) {
+      await store.remove('voices', id);
+    },
+
+    /**
+     * 把伺服器的共用音色庫（種子）寫進本地。
+     *
+     * <p>只在該音色還沒被匯入過時才寫入，避免覆蓋使用者改過的名稱。
+     * 回傳實際新增的筆數。
+     */
+    async seedBuiltins(list) {
+      let added = 0;
+      const now = Date.now();
+      for (const v of list) {
+        const id = v.id || (v.model + '::' + v.voiceId);
+        const existing = await store.get('voices', id);
+        if (existing) continue;
+        await store.put('voices', {
+          id: id,
+          model: v.model || '',
+          voiceId: v.voiceId,
+          displayName: v.displayName || v.voiceId,
+          category: v.category || '',
+          gender: v.gender || '',
+          styleDesc: v.styleDesc || '',
+          enabled: true,
+          sortOrder: v.sortOrder || 100,
+          source: v.source || 'builtin',
+          builtin: true,
+          updatedAt: now,
+        });
+        added++;
+      }
+      return added;
+    },
+
+    /** 依模型列出該模型支援的所有音色 id（供匯入用）。 */
+    async listByModel(model) {
+      const rows = await store.getAll('voices');
+      return rows.filter((v) => v.model === model);
+    },
+  };
+
   window.NovelTtsDB = {
     store: store,
     generations: generations,
+    voices: voices,
     settings: settings,
     credentials: credentials,
     novels: novels,
@@ -373,6 +478,7 @@
         novels: await store.getAll('novels'),
         groups: await store.getAll('groups'),
         generations: await store.getAll('generations'),
+        voices: await store.getAll('voices'),
         settings: await settings.get(),
       };
     },

@@ -46,11 +46,80 @@ public class SegmentParser {
             try {
                 analysis = mapper.readValue(extracted, SegmentAnalysis.class);
             } catch (Exception e2) {
+                // JSON 被 max_tokens 截斷是很常見的情況（章節長、段落多時）。
+                // 與其整章失敗，不如把已經完整的那些段落救回來。
+                SegmentAnalysis salvaged = salvageTruncatedJson(extracted);
+                if (salvaged != null) {
+                    log.warn("AI 回應的 JSON 被截斷，已救回 {} 段", salvaged.segments().size());
+                    validate(salvaged);
+                    return salvaged;
+                }
                 throw new IllegalStateException("回應不是合法 JSON: " + truncate(content));
             }
         }
         validate(analysis);
         return analysis;
+    }
+
+    /**
+     * 從被截斷的 JSON 裡救回完整的段落。
+     *
+     * <p>模型輸出到一半被 max_tokens 截斷時，JSON 會缺結尾的
+     * {@code ]}}。做法是找出每個完整段落的邊界，逐一取出再重組成合法 JSON。
+     *
+     * @return 救回的結果；沒有任何完整段落時回傳 null
+     */
+    private SegmentAnalysis salvageTruncatedJson(String json) {
+        try {
+            // 找出 "segments" 陣列的內容區間
+            int key = json.indexOf("\"segments\"");
+            if (key < 0) return null;
+            int arrStart = json.indexOf('[', key);
+            if (arrStart < 0) return null;
+
+            // 逐一抓出完整的 {...} 物件
+            java.util.List<String> objects = new java.util.ArrayList<>();
+            int depth = 0;
+            int objStart = -1;
+            boolean inString = false;
+            boolean escaped = false;
+            for (int i = arrStart; i < json.length(); i++) {
+                char c = json.charAt(i);
+                if (inString) {
+                    if (escaped) {
+                        escaped = false;
+                    } else if (c == '\\') {
+                        escaped = true;
+                    } else if (c == '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+                if (c == '"') {
+                    inString = true;
+                } else if (c == '{') {
+                    if (depth == 0) objStart = i;
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0 && objStart >= 0) {
+                        objects.add(json.substring(objStart, i + 1));
+                        objStart = -1;
+                    }
+                }
+            }
+            if (objects.isEmpty()) return null;
+
+            StringBuilder sb = new StringBuilder("{\"segments\":[");
+            for (int i = 0; i < objects.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(objects.get(i));
+            }
+            sb.append("]}");
+            return mapper.readValue(sb.toString(), SegmentAnalysis.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void validate(SegmentAnalysis analysis) {

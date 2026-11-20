@@ -53,18 +53,36 @@ function renderChapters() {
     return;
   }
   for (const ch of chapters) {
+    // el() 收的是變數引數，不是陣列 —— 傳陣列會被當成單一 child 而壞掉。
+    const statusCell = ch.status === 'FAILED'
+      ? el('td', {},
+        el('span', { class: 'badge FAILED', text: 'FAILED' }),
+        el('div', { class: 'muted', text: ch.error || '分析失敗' }))
+      : el('td', {}, el('span', { class: 'badge ' + (ch.status || 'NEW'), text: ch.status || 'NEW' }));
     tbody.appendChild(el('tr', {},
       el('td', { text: String(ch.index) }),
       el('td', { text: ch.title || ('第 ' + ch.index + ' 章') }),
       el('td', { text: String(ch.charCount || (ch.content || '').length) }),
       el('td', { text: String((ch.segments || []).length) }),
-      el('td', {}, el('span', { class: 'badge ' + (ch.status || 'NEW'), text: ch.status || 'NEW' })),
+      statusCell,
       el('td', {}, el('a', {
         class: 'btn btn-sm',
         href: '/novels/' + NOVEL.id + '/segments?chapterId=' + encodeURIComponent(ch.id),
         text: '查看段落'
       }))
     ));
+  }
+
+  // 分析進度提示（續傳）
+  const p = NOVEL.analysisProgress;
+  const failedCount = (p && p.failed && p.failed.length) || 0;
+  if (p && (p.done < p.total || failedCount)) {
+    tbody.appendChild(el('tr', {}, el('td', {
+      colspan: '6', class: 'muted',
+      text: '分析進度 ' + p.done + '/' + p.total + ' 章'
+        + (failedCount ? '（' + failedCount + ' 章失敗）' : '')
+        + ' — 按「繼續 AI 分析」只會重跑失敗的章節，不會重跑已完成的。',
+    })));
   }
 }
 
@@ -103,6 +121,7 @@ async function reload() {
   renderHeader();
   renderChapters();
   await renderAudios();
+  if (typeof updateAnalyzeButton === 'function') updateAnalyzeButton();
 }
 
 /* ---- 分析／合成 pipeline（實作在 pipeline.js，這裡提供頁面層的入口） ---- */
@@ -113,8 +132,8 @@ async function reload() {
  * @param {object} novel 小說物件（會就地更新並存回 IndexedDB）
  * @param {function} onProgress (pct, label)
  */
-async function analyzeNovel(novel, onProgress) {
-  return window.NovelTtsPipeline.analyzeNovel(novel, onProgress);
+async function analyzeNovel(novel, onProgress, opts) {
+  return window.NovelTtsPipeline.analyzeNovel(novel, onProgress, opts);
 }
 
 /**
@@ -124,7 +143,7 @@ async function synthesizeChapter(novel, chapter, onlyPending, onProgress) {
   return window.NovelTtsPipeline.synthesizeChapter(novel, chapter, onlyPending, onProgress);
 }
 
-/* 觸發 AI 分析 */
+/* 觸發 AI 分析（可續傳：失敗後再按一次會從中斷處繼續） */
 document.getElementById('analyzeBtn').addEventListener('click', async () => {
   if (!requireApiKey()) return;
   if (!NOVEL) return;
@@ -132,16 +151,45 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     setProgress(0, '準備分析…');
-    await analyzeNovel(NOVEL, (pct, label) => setProgress(pct, label));
+    // 按鈕顯示「重新分析」時強制重跑全部章節；否則是續傳
+    const force = btn.textContent.indexOf('重新分析') >= 0;
+    await analyzeNovel(NOVEL, (pct, label) => setProgress(pct, label), { force: force });
     await reload();
     setMessage('分析完成：' + (NOVEL.chapters || []).length + ' 章 / '
       + (NOVEL.chapters || []).reduce((n, c) => n + (c.segments || []).length, 0) + ' 段', true);
   } catch (e) {
-    setMessage('分析失敗: ' + e.message, false);
+    // 續傳提示：已完成的章節都在，按一次繼續就好
+    const done = (NOVEL.chapters || []).filter((c) => c.status === 'ANALYZED').length;
+    setMessage('分析失敗: ' + e.message
+      + (done > 0 ? '（已完成 ' + done + ' 章，再按一次「觸發 AI 分析」會從中斷處繼續）' : ''), false);
+    await reload();
   } finally {
     btn.disabled = false;
+    updateAnalyzeButton();
   }
 });
+
+/**
+ * 依分析進度更新按鈕文字。
+ *
+ * <p>有已完成的章節時顯示「繼續 AI 分析」，讓使用者知道再按一次是接續而非重跑。
+ */
+function updateAnalyzeButton() {
+  const btn = document.getElementById('analyzeBtn');
+  if (!btn || !NOVEL) return;
+  const chapters = NOVEL.chapters || [];
+  const done = chapters.filter((c) => c.status === 'ANALYZED').length;
+  const failed = chapters.filter((c) => c.status === 'FAILED').length;
+  const total = (NOVEL.analysisProgress && NOVEL.analysisProgress.total) || chapters.length;
+  if (!done && !failed) {
+    btn.textContent = '觸發 AI 分析';
+  } else if (failed) {
+    btn.textContent = '繼續 AI 分析（' + done + '/' + total + '）';
+  } else {
+    // 全部成功 —— 按鈕回到原本的樣子
+    btn.textContent = '重新分析';
+  }
+}
 
 /* 觸發語音合成（整本） */
 document.getElementById('synthesizeBtn').addEventListener('click', async () => {
