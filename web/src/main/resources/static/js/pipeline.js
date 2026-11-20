@@ -826,7 +826,8 @@
       }
     }
     if (!items.length) throw new Error('本章沒有已合成的音檔');
-    const blob = await GW.merge(items);
+    // 分批上傳 —— 長章節的段落音檔總量可能超過伺服器的大小限制
+    const blob = await runMergeJob(items, 'MERGE', null);
     const durationMs = await DB.audio.durationMs(blob);
     await DB.audio.save(novel.id, 'CHAPTER', chapter.id, blob, {
       chapterIndex: chapter.index,
@@ -839,7 +840,7 @@
   /**
    * 合併整本：把所有章節音檔合併成一個音檔。
    */
-  async function mergeNovelAudio(novel) {
+  async function mergeNovelAudio(novel, onProgress) {
     const chapters = novel.chapters || [];
     const items = [];
     for (const ch of chapters) {
@@ -858,7 +859,9 @@
       }
     }
     if (!items.length) throw new Error('整本還沒有任何音檔，請先執行語音合成');
-    const blob = await GW.merge(items);
+    const blob = await runMergeJob(items, 'MERGE', (pct, label) => {
+      if (onProgress) onProgress(pct, label);
+    });
     const durationMs = await DB.audio.durationMs(blob);
     await DB.audio.save(novel.id, 'NOVEL', novel.id, blob, {
       fileName: (novel.title || 'novel') + '.mp3',
@@ -868,9 +871,110 @@
   }
 
   /**
+   * 一次上傳批次的大小上限（位元組）。
+   *
+   * <p>要小於伺服器的 {@code max-request-size}（25MB），留一點餘裕。
+   */
+  const MERGE_UPLOAD_BATCH = 15 * 1024 * 1024;
+
+  /**
+   * 單一批次的最大檔案數。
+   *
+   * <p>Tomcat 的 {@code maxPartCount} 限制單一 multipart 請求的 part 數。
+   * 超過會回 413，而且錯誤訊息寫的是「Maximum upload size exceeded」——
+   * 看起來像大小問題，實際是檔案數問題，很容易搞錯方向。
+   *
+   * <p>伺服器端已把上限調到 500，但前端仍控制在 50 個以內：
+   * 檔案數少的批次能更快送出，也避開單一請求過大的問題。
+   */
+  const MERGE_UPLOAD_MAX_FILES = 40;
+
+  /**
+   * 分批上傳 → 伺服器背景合併 → 取回結果。
+   *
+   * <p><b>為什麼要分批</b>
+   *
+   * <p>「合併整本」要把整本書的音檔送給伺服器用 ffmpeg 合併。
+   * 一本長篇小說的音檔總量動輒 250MB，單次 multipart 請求一定會被
+   * 伺服器的大小限制擋掉（而且把限制調大只是把問題往後推 ——
+   * 250MB 的書會再撞一次）。
+   *
+   * <p>所以改成：每批控制在 15MB 以內分批送，伺服器暫存後在背景合併，
+   * 前端輪詢進度再取回結果。總量因此沒有上限。
+   *
+   * @param {Array<{blob: Blob, name: string}>} items
+   * @param {string} type MERGE 或 ZIP
+   * @param {function} onProgress (pct, label)
+   * @returns {Promise<Blob>}
+   */
+  async function runMergeJob(items, type, onProgress) {
+    const job = await GW.createMergeJob({ type: type, total: items.length });
+
+    // 依總大小分批
+    const batches = [];
+    let current = [];
+    let currentSize = 0;
+    for (const it of items) {
+      const size = it.blob.size || 0;
+      // 單一檔案就超過批次上限時，獨自成一批
+      if (size > MERGE_UPLOAD_BATCH) {
+        if (current.length) { batches.push(current); current = []; currentSize = 0; }
+        batches.push([it]);
+        continue;
+      }
+      // 大小或數量超過門檻就切批
+      if ((currentSize + size > MERGE_UPLOAD_BATCH || current.length >= MERGE_UPLOAD_MAX_FILES)
+          && current.length) {
+        batches.push(current);
+        current = [];
+        currentSize = 0;
+      }
+      current.push(it);
+      currentSize += size;
+    }
+    if (current.length) batches.push(current);
+
+    let uploaded = 0;
+    try {
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        await GW.uploadMergeParts(job.jobId, batch);
+        uploaded += batch.length;
+        if (onProgress) {
+          onProgress(Math.round((uploaded / items.length) * 60),
+            '上傳音檔 ' + uploaded + ' / ' + items.length);
+        }
+      }
+
+      await GW.startMergeJob(job.jobId);
+
+      // 輪詢合併進度
+      for (;;) {
+        const state = await GW.mergeJobStatus(job.jobId);
+        if (onProgress) {
+          onProgress(60 + Math.round((state.uploaded / items.length) * 40),
+            state.message || '合併中…');
+        }
+        if (state.status === 'DONE') {
+          const blob = await GW.mergeJobResult(job.jobId);
+          if (onProgress) onProgress(100, '合併完成');
+          return blob;
+        }
+        if (state.status === 'FAILED') {
+          throw new Error(state.message || '合併失敗');
+        }
+        await window.sleep(1500);
+      }
+    } finally {
+      // 取回結果（或失敗）後，清掉伺服器上的暫存檔
+      await GW.cancelMergeJob(job.jobId);
+    }
+  }
+
+  /**
    * 打包整本為 ZIP。
    */
-  async function zipNovel(novel) {
+  async function zipNovel(novel, onProgress) {
     const chapters = novel.chapters || [];
     const items = [];
     for (const ch of chapters) {
@@ -888,7 +992,8 @@
       }
     }
     if (!items.length) throw new Error('整本還沒有任何音檔，請先執行語音合成');
-    return await GW.zip(items, novel.title || 'novel');
+    // 走合併工作（分批上傳）—— 一次送出全部會撞上伺服器的大小限制
+    return await runMergeJob(items, 'ZIP', onProgress);
   }
 
   /**
@@ -980,6 +1085,7 @@
     synthesizeNovel: synthesizeNovel,
     mergeChapterAudio: mergeChapterAudio,
     mergeNovelAudio: mergeNovelAudio,
+    runMergeJob: runMergeJob,
     zipNovel: zipNovel,
     autoAssignVoices: autoAssignVoices,
     novelIdFromPath: novelIdFromPath,

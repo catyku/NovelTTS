@@ -95,6 +95,56 @@ DELETE /api/gateway/jobs/{jobId}                     取消並清除
 - 續傳照舊：只把「還沒分析過的章節」送到伺服器，已完成的直接沿用
 - 背景工作不可用時（舊版伺服器）自動退回逐章同步呼叫
 
+### 合併整本 / 下載 ZIP：分批上傳的背景工作
+
+「合併整本」要把整本書的音檔送給伺服器用 ffmpeg 合併。一本長篇小說的
+音檔總量動輒 250MB，一次送出一定會被擋掉 —— 而且把伺服器的大小上限
+調大只是把問題往後推。
+
+改成背景工作：
+
+```
+POST   /api/gateway/merge-jobs              建立工作
+POST   /api/gateway/merge-jobs/{id}/parts   分批上傳音檔
+POST   /api/gateway/merge-jobs/{id}/start   開始合併
+GET    /api/gateway/merge-jobs/{id}         輪詢進度
+GET    /api/gateway/merge-jobs/{id}/result  取回結果
+DELETE /api/gateway/merge-jobs/{id}         清除暫存
+```
+
+- 前端每批控制在 15MB / 40 個檔案以內，**總量沒有上限**
+- 伺服器在背景跑 ffmpeg，前端輪詢進度
+- 合併整本、下載 ZIP、合併本章三個都走這條路
+
+**伺服器端的暫存檔**
+
+合併需要在伺服器暫存音檔副本才能跑 ffmpeg：
+
+- 只存在於工作期間，取回結果後立刻刪除
+- 結果取回後 30 秒自動清除（給前端重試的空間）
+- `@Scheduled` 定期清理過期工作 —— 沒有它的話，過期工作只會在
+  「有人建立新工作」時被順帶清掉，沒新工作時暫存檔會永遠留在磁碟上
+- 逾時未完成 60 分鐘、已完成 30 分鐘自動清除
+- 不寫入 log、不進資料庫
+
+### Tomcat 的 maxPartCount 限制（容易踩坑）
+
+Tomcat 10.1 起把 `maxPartCount` 預設設為 **50** —— 單一 multipart 請求
+最多只能有 50 個 part，超過就回 413。
+
+**它的錯誤訊息寫的是「Maximum upload size exceeded」，但實際跟大小無關。**
+實測：55 個 1KB 的小檔案（共 55KB）一樣被擋掉，而 50 個 168KB 的檔案
+（共 8MB）卻過了。看到這個錯誤訊息時要先想「檔案數量」而不是「大小」。
+
+本專案在 `TomcatConfig` 把上限調到 500，前端同時限制每批 40 個檔案。
+兩邊都要管 —— 只調伺服器會讓單一請求變大（更容易撞上 Cloudflare 的
+100 秒逾時），只調前端則會在檔案數多的書上失效。
+
+**注意**：`connector.setProperty("maxPartCount", "500")` 讀回來會顯示 500，
+但**實際不生效** —— `setProperty` 走 IntrospectionUtils 反射，
+失敗時不報錯，只是靜默地沒設到。必須用直接的 setter
+（`connector.setMaxPartCount(500)`）。
+
 ### 背景語音合成：併行處理，音檔分批取回
 
 語音合成比分析更重 —— 一本長篇小說有 500 段以上。前端逐段同步呼叫會遇到：

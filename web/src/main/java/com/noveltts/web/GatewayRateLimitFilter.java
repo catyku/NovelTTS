@@ -91,11 +91,32 @@ public class GatewayRateLimitFilter extends OncePerRequestFilter {
       * <p>{@code GET /api/gateway/jobs/{id}} —— 純讀取，不消耗上游額度。
       */
      private boolean isJobStatusQuery(HttpServletRequest request) {
-         if (!"GET".equalsIgnoreCase(request.getMethod())) {
-             return false;
-         }
          String uri = request.getRequestURI();
-         return uri.startsWith("/api/gateway/jobs/") && uri.indexOf('/', "/api/gateway/jobs/".length()) < 0;
+         String method = request.getMethod();
+
+         // 背景工作的狀態查詢 —— 只讀記憶體，不消耗上游額度
+         if ("GET".equalsIgnoreCase(method)
+                 && uri.startsWith("/api/gateway/jobs/")
+                 && uri.indexOf('/', "/api/gateway/jobs/".length()) < 0) {
+             return true;
+         }
+
+         // 合併工作的狀態查詢 —— 同樣只是讀記憶體
+         if ("GET".equalsIgnoreCase(method)
+                 && uri.startsWith("/api/gateway/merge-jobs/")
+                 && uri.indexOf('/', "/api/gateway/merge-jobs/".length()) < 0) {
+             return true;
+         }
+
+         // 合併工作的分批上傳 —— 一本書要上傳數十批，
+         // 這些請求不呼叫 OpenRouter，不該佔用上游額度的配額
+         if ("POST".equalsIgnoreCase(method)
+                 && uri.startsWith("/api/gateway/merge-jobs/")
+                 && uri.endsWith("/parts")) {
+             return true;
+         }
+
+         return false;
      }
 
      /** 取得來源 IP。

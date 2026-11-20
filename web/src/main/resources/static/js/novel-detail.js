@@ -220,8 +220,9 @@ document.getElementById('mergeBtn').addEventListener('click', async () => {
   const btn = document.getElementById('mergeBtn');
   btn.disabled = true;
   try {
-    setProgress(50, '合併整本音檔…');
-    const blob = await window.NovelTtsPipeline.mergeNovelAudio(NOVEL);
+    setProgress(1, '合併整本音檔…');
+    const blob = await window.NovelTtsPipeline.mergeNovelAudio(
+      NOVEL, (pct, label) => setProgress(pct, label));
     await renderAudios();
     setProgress(100, '合併完成：' + (NOVEL.title || 'novel') + '.mp3（' + fmtSize(blob.size) + '）');
     downloadBlob(blob, (NOVEL.title || 'novel') + '.mp3');
@@ -239,8 +240,9 @@ if (zipBtn) {
     if (!NOVEL) return;
     zipBtn.disabled = true;
     try {
-      setProgress(50, '打包整本音檔…');
-      const blob = await window.NovelTtsPipeline.zipNovel(NOVEL);
+      setProgress(1, '打包整本音檔…');
+      const blob = await window.NovelTtsPipeline.zipNovel(
+        NOVEL, (pct, label) => setProgress(pct, label));
       setProgress(100, '打包完成（' + fmtSize(blob.size) + '）');
       downloadBlob(blob, (NOVEL.title || 'novel') + '.zip');
     } catch (e) {

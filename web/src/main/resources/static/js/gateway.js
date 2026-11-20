@@ -443,6 +443,121 @@
     },
 
     /**
+     * 建立合併工作。
+     *
+     * @param {object} opts {type: 'MERGE'|'ZIP', total, name}
+     * @returns {Promise<object>} {jobId, ...}
+     */
+    async createMergeJob(opts) {
+      const response = await fetchWithTimeout('/merge-jobs', {
+        method: 'POST',
+        headers: buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          type: opts.type || 'MERGE',
+          total: opts.total || 0,
+          name: opts.name || '',
+        }),
+      }, 30_000);
+      if (!response.ok) {
+        throw new Error('無法建立合併工作：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 上傳一批音檔到合併工作。
+     *
+     * @param {string} jobId
+     * @param {Array<{blob: Blob, name: string}>} items
+     * @param {string} name ZIP 檔名（僅 ZIP 需要）
+     * @returns {Promise<object>} 工作狀態
+     */
+    async uploadMergeParts(jobId, items, name) {
+      const form = new FormData();
+      items.forEach((it, i) => {
+        form.append('files', it.blob, it.name || ('part' + i + '.mp3'));
+      });
+      if (name) form.append('name', name);
+      const response = await fetchWithTimeout('/merge-jobs/' + encodeURIComponent(jobId) + '/parts', {
+        method: 'POST',
+        headers: buildHeaders(),
+        body: form,
+      }, 120_000);
+      if (!response.ok) {
+        throw new Error('上傳音檔失敗：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 開始合併。
+     *
+     * @param {string} jobId
+     * @returns {Promise<object>} 工作狀態
+     */
+    async startMergeJob(jobId) {
+      const response = await fetchWithTimeout('/merge-jobs/' + encodeURIComponent(jobId) + '/start', {
+        method: 'POST',
+        headers: buildHeaders(),
+      }, 30_000);
+      if (!response.ok) {
+        throw new Error('無法開始合併：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 查詢合併進度。
+     *
+     * @param {string} jobId
+     * @returns {Promise<object>} {status, uploaded, message, ready}
+     */
+    async mergeJobStatus(jobId) {
+      const response = await fetchWithTimeout('/merge-jobs/' + encodeURIComponent(jobId), {
+        method: 'GET',
+        headers: buildHeaders(),
+      }, 30_000);
+      if (!response.ok) {
+        throw new Error('查詢合併進度失敗：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 取回合併結果。
+     *
+     * @param {string} jobId
+     * @returns {Promise<Blob>}
+     */
+    async mergeJobResult(jobId) {
+      const response = await fetchWithTimeout('/merge-jobs/' + encodeURIComponent(jobId) + '/result', {
+        method: 'GET',
+        headers: buildHeaders(),
+      }, 300_000);
+      if (!response.ok) {
+        throw new Error('取回合併結果失敗：' + (await readError(response)));
+      }
+      return response.blob();
+    },
+
+    /**
+     * 取消合併工作並清除伺服器暫存檔。
+     *
+     * @param {string} jobId
+     */
+    async cancelMergeJob(jobId) {
+      try {
+        await fetchWithTimeout('/merge-jobs/' + encodeURIComponent(jobId), {
+          method: 'DELETE',
+          headers: buildHeaders(),
+        }, 20_000);
+      } catch (e) {
+        // 清除失敗不影響主流程 —— 伺服器逾時也會自動清掉暫存檔
+        console.warn('清除合併工作失敗：', e);
+      }
+    },
+
+    /**
      * 把多個檔案打包成 ZIP → ZIP Blob。
      *
      * @param {Array<{blob: Blob, name: string}>} items

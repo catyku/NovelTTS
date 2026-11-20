@@ -25,6 +25,12 @@ spring:
     multipart:
       max-file-size: 20MB
       max-request-size: 25MB
+  # Spring Boot 4 把 multipart 設定搬到 spring.web.multipart。
+  # 舊路徑仍支援但已被標記 deprecated —— 兩邊都設，避免其中一邊失效。
+  web:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
 
 server:
   port: ${SERVER_PORT:8090}
