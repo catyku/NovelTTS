@@ -99,13 +99,16 @@ public class ChapterSplitter {
                 continue;
             }
             if (sb.length() + p.length() + 2 > maxChars && sb.length() > 0) {
-                result.add(new Chunk(index++, "第 " + index + " 段", sb.toString().strip()));
+                // 用 result.size() + 1 當編號 —— index++ 會讓第一段拿到「第 2 段」
+                result.add(new Chunk(result.size() + 1, "第 " + (result.size() + 1) + " 段",
+                        sb.toString().strip()));
                 sb.setLength(0);
             }
             sb.append(p.strip()).append("\n\n");
         }
         if (sb.length() > 0) {
-            result.add(new Chunk(index++, "第 " + index + " 段", sb.toString().strip()));
+            result.add(new Chunk(result.size() + 1, "第 " + (result.size() + 1) + " 段",
+                    sb.toString().strip()));
         }
         return result;
     }

@@ -88,6 +88,24 @@ class ChapterSplitterTest {
     }
 
     @Test
+    void 無標題切分的編號從1開始() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            sb.append("這是第").append(i).append("個段落。\n\n");
+        }
+
+        List<ChapterSplitter.Chunk> chunks = splitter.split(sb.toString(), 100);
+
+        // index 與標題都要從 1 開始 —— 先 push 再 ++ 會讓第一段拿到「第 2 段」
+        assertThat(chunks.get(0).index()).isEqualTo(1);
+        assertThat(chunks.get(0).title()).isEqualTo("第 1 段");
+        for (int i = 0; i < chunks.size(); i++) {
+            assertThat(chunks.get(i).index()).isEqualTo(i + 1);
+            assertThat(chunks.get(i).title()).isEqualTo("第 " + (i + 1) + " 段");
+        }
+    }
+
+    @Test
     void 空內容回傳空清單() {
         assertThat(splitter.split(null, 3000)).isEmpty();
         assertThat(splitter.split("   ", 3000)).isEmpty();

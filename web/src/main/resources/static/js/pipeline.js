@@ -354,6 +354,136 @@
   }
 
   /**
+   * 把伺服器回傳的段落轉成前端使用的段落物件。
+   *
+   * @param {object} res 伺服器回傳的章節結果
+   * @returns {object} 章節物件
+   */
+  function toChapter(res) {
+    return {
+      id: window.uid('ch'),
+      index: res.index,
+      title: res.title || ('第 ' + res.index + ' 章'),
+      content: res.content || '',
+      charCount: res.charCount || (res.content || '').length,
+      status: 'ANALYZED',
+      segments: (res.segments || []).map((s, idx) => ({
+        id: window.uid('seg'),
+        seq: idx + 1,
+        chapterId: '',
+        type: s.type === 'DIALOGUE' ? 'DIALOGUE' : 'NARRATION',
+        characterId: null,
+        characterName: s.character_name || null,
+        speakerName: s.speaker_name || s.character_name || '旁白',
+        text: s.text || '',
+        emotion: s.emotion || '',
+        styleHint: s.style_hint || '',
+        instructions: s.style_instructions || '',
+        voice: '',
+        ttsStatus: 'PENDING',
+      })),
+    };
+  }
+
+  /**
+   * 背景分析：伺服器逐章處理，前端輪詢進度。
+   *
+   * <p>這是主要的分析路徑。伺服器在背景呼叫 AI，瀏覽器只送 1 個
+   * 開始請求 + 每 2 秒 1 個進度查詢 —— 每次請求都只花幾毫秒，
+   * 不會撞上 Cloudflare 的 100 秒代理逾時，也不會用掉閘道的 rate limit。
+   *
+   * @param {Array} todo 需要分析的章節
+   * @param {Array} chapters 已完成的章節（會被就地更新）
+   * @param {Array} failed 失敗清單（會被就地更新）
+   * @param {number} total 總章節數
+   * @param {function} persist 存檔回呼
+   * @param {function} onProgress 進度回呼
+   */
+  async function runAnalyzeJob(todo, chapters, failed, total, persist, onProgress) {
+    const job = await GW.startAnalyzeJob({ chapters: todo });
+    const seen = new Set(chapters.map((c) => c.index));
+    let message = '';
+
+    for (;;) {
+      if (onProgress) {
+        onProgress(Math.round((chapters.length / total) * 100),
+          message || ('分析中 ' + chapters.length + '/' + total));
+      }
+      const state = await GW.jobStatus(job.jobId);
+      message = state.message || message;
+
+      let changed = false;
+      for (const res of (state.results || [])) {
+        if (seen.has(res.index)) continue;
+        seen.add(res.index);
+        chapters.push(toChapter(res));
+        changed = true;
+      }
+      for (const f of (state.failures || [])) {
+        if (seen.has(f.index)) continue;
+        seen.add(f.index);
+        failed.push({ index: f.index, title: f.title || '', message: f.message });
+        chapters.push({
+          id: window.uid('ch'),
+          index: f.index,
+          title: f.title || ('第 ' + f.index + ' 章'),
+          content: '',
+          charCount: 0,
+          status: 'FAILED',
+          error: f.message,
+          segments: [],
+        });
+        changed = true;
+      }
+      if (changed) await persist();
+
+      if (state.status === 'SUCCESS' || state.status === 'PARTIAL'
+          || state.status === 'FAILED' || state.status === 'CANCELLED') {
+        if (state.status === 'FAILED' && !(state.failures || []).length) {
+          throw new Error(state.message || '背景分析工作失敗');
+        }
+        break;
+      }
+      await window.sleep(2000);
+    }
+  }
+
+  /**
+   * 逐章同步分析（背景工作不可用時的後備路徑）。
+   *
+   * @param {Array} todo 需要分析的章節
+   * @param {Array} chapters 已完成的章節（會被就地更新）
+   * @param {Array} failed 失敗清單（會被就地更新）
+   * @param {number} total 總章節數
+   * @param {function} persist 存檔回呼
+   * @param {function} onProgress 進度回呼
+   */
+  async function runAnalyzeSync(todo, chapters, failed, total, persist, onProgress) {
+    for (const r of todo) {
+      if (onProgress) {
+        onProgress(Math.round((chapters.length / total) * 100),
+          '分析第 ' + r.index + ' / ' + total + ' 章：' + (r.title || ''));
+      }
+      try {
+        chapters.push(await analyzeOneChapter(r));
+      } catch (e) {
+        failed.push({ index: r.index, title: r.title || '', message: String(e.message || e) });
+        chapters.push({
+          id: window.uid('ch'),
+          index: r.index,
+          title: r.title || ('第 ' + r.index + ' 章'),
+          content: r.content || '',
+          charCount: (r.content || '').length,
+          status: 'FAILED',
+          error: String(e.message || e),
+          segments: [],
+        });
+      }
+      await persist();
+    }
+  }
+
+  /**
    * 分析整本小說：切章 → 逐章呼叫閘道分析 → 建立／更新角色 → 套用群組共用音色。
    *
    * <p><b>可續傳</b>：每分析完一章就存回 IndexedDB，並在
@@ -384,64 +514,63 @@
     // 章節以「index + 內容雜湊」配對 —— 使用者改了內容就會重新分析那一章。
     const previous = Array.isArray(novel.chapters) ? novel.chapters : [];
     const prevByKey = new Map(previous.map((c) => [chapterKey(c), c]));
-    const chapters = [];
-    const failed = [];
 
-    for (let i = 0; i < raw.length; i++) {
-      const r = raw[i];
+    // 分成「沿用」與「要分析」兩組。沿用的章節不送給伺服器重跑。
+    const reuse = new Map();
+    const todo = [];
+    for (const r of raw) {
       const key = chapterKey({ index: r.index, content: r.content });
       const done = prevByKey.get(key);
-
       if (!force && done && done.status === 'ANALYZED' && (done.segments || []).length) {
-        // 這章上次已經分析成功 —— 直接沿用，不重跑
-        chapters.push(done);
-        novel.analysisProgress = {
-          done: chapters.length, total: raw.length, failed: failed.slice(),
-          updatedAt: Date.now(),
-        };
-        await DB.novels.save(novel);
-        if (onProgress) {
-          onProgress(Math.round((chapters.length / raw.length) * 100),
-            '分析第 ' + (i + 1) + '/' + raw.length + ' 章（沿用已完成）');
-        }
-        continue;
+        reuse.set(key, done);
+      } else {
+        todo.push(r);
       }
+    }
 
-      if (onProgress) {
-        onProgress(Math.round((i / raw.length) * 100),
-          '分析第 ' + (i + 1) + '/' + raw.length + ' 章：' + (r.title || ''));
-      }
+    const chapters = [];
+    const failed = [];
+    const total = raw.length;
 
-      let chapter;
-      try {
-        chapter = await analyzeOneChapter(r);
-      } catch (e) {
-        // 單章失敗不中斷整本
-        failed.push({ index: r.index, title: r.title || '', message: String(e.message || e) });
-        chapter = {
-          id: window.uid('ch'),
-          index: r.index,
-          title: r.title || ('第 ' + r.index + ' 章'),
-          content: r.content,
-          charCount: (r.content || '').length,
-          status: 'FAILED',
-          error: String(e.message || e),
-          segments: [],
-        };
-      }
-      chapters.push(chapter);
-
-      // 每章完成就存檔 —— 中途中斷也不會遺失已完成的章節
-      novel.chapters = chapters;
+    /** 把已完成結果寫回小說物件並存檔。 */
+    const persist = async () => {
+      novel.chapters = chapters.slice().sort((a, b) => a.index - b.index);
       novel.analysisProgress = {
         done: chapters.length,
-        total: raw.length,
+        total: total,
         failed: failed.slice(),
         updatedAt: Date.now(),
       };
       await DB.novels.save(novel);
+    };
+
+    // 先放進沿用的章節
+    for (const r of raw) {
+      const key = chapterKey({ index: r.index, content: r.content });
+      const done = reuse.get(key);
+      if (done) chapters.push(done);
+    }
+    await persist();
+
+    if (todo.length === 0) {
+      // 全部都已分析過 —— 不需要開工作
+      if (onProgress) onProgress(100, '所有章節都已分析完成');
+    } else {
+      // 交給伺服器在背景逐章分析，前端輪詢進度。
+      //
+      // 這解決了逐章同步呼叫的兩個問題：
+      // 1. Cloudflare 的 100 秒代理逾時 —— 現在每次請求都只花幾毫秒
+      // 2. 閘道的每分鐘 30 次 rate limit —— 29 章會直接觸發 429
+      try {
+        await runAnalyzeJob(todo, chapters, failed, total, persist, onProgress);
+      } catch (e) {
+        // 背景工作不可用（例如舊版伺服器）—— 退回逐章同步呼叫
+        console.warn('背景分析工作失敗，改用逐章同步呼叫：', e);
+        await runAnalyzeSync(todo, chapters, failed, total, persist, onProgress);
+      }
     }
 
+    chapters.sort((a, b) => a.index - b.index);
     novel.chapters = chapters;
     novel.characters = [];
     const allSegments = chapters.flatMap((c) => c.segments);

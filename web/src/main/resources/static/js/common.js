@@ -69,6 +69,16 @@ function el(tag, attrs, ...children) {
   return node;
 }
 
+/**
+ * 等待指定的毫秒數。
+ *
+ * @param {number} ms 毫秒
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function fmtDuration(ms) {
   if (ms === null || ms === undefined) return '-';
   const s = Math.round(ms / 1000);

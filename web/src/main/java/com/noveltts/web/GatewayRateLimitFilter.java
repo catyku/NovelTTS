@@ -51,6 +51,14 @@ public class GatewayRateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 背景工作的狀態查詢不算入速率限制 ——
+        // 它只是讀記憶體裡的一個物件，不會消耗 OpenRouter 額度。
+        // 沒有這個例外的話，前端每 2 秒輪詢一次會直接把自己的配額用光。
+        if (isJobStatusQuery(request)) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         String key = clientKey(request);
         Window window = windows.compute(key, (k, w) -> {
             long now = System.currentTimeMillis();
@@ -77,7 +85,20 @@ public class GatewayRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 取得來源 IP。
+     /**
+      * 是否為背景工作的狀態查詢。
+      *
+      * <p>{@code GET /api/gateway/jobs/{id}} —— 純讀取，不消耗上游額度。
+      */
+     private boolean isJobStatusQuery(HttpServletRequest request) {
+         if (!"GET".equalsIgnoreCase(request.getMethod())) {
+             return false;
+         }
+         String uri = request.getRequestURI();
+         return uri.startsWith("/api/gateway/jobs/") && uri.indexOf('/', "/api/gateway/jobs/".length()) < 0;
+     }
+
+     /** 取得來源 IP。
      *
      * <p>不信任 X-Forwarded-For 的第一段（可被偽造）。Cloudflare Tunnel 會設定
      * CF-Connecting-IP，這是可信的；本機直連則用 remoteAddr。

@@ -421,8 +421,19 @@ public class OpenRouterClient {
     /** TTS 呼叫的讀取逾時 —— 合成音檔比分析慢，但仍在 Cloudflare 上限內。 */
     private static final long TTS_READ_TIMEOUT_MS = 85_000;
 
+    /**
+     * 依 provider 設定的逾時建立 client。
+     *
+     * <p>背景工作（{@code /api/gateway/jobs/*}）不在 Cloudflare 的
+     * 100 秒代理逾時之下 —— 那個限制只作用於「瀏覽器 → 伺服器」的
+     * 請求。背景工作可以安心等更久，所以 provider 可以指定較長的逾時。
+     */
     private RestClient buildClient(GatewayProvider config) {
-        return buildClient(config, READ_TIMEOUT_MS);
+        Integer seconds = config.timeoutSeconds();
+        long timeoutMs = (seconds == null || seconds <= 0)
+                ? READ_TIMEOUT_MS
+                : Math.min(seconds * 1000L, 600_000L);
+        return buildClient(config, timeoutMs);
     }
 
     private RestClient buildClient(GatewayProvider config, long readTimeoutMs) {

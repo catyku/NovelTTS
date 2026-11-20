@@ -122,6 +122,76 @@
     describeProxyError: describeProxyError,
 
     /**
+     * 開始背景分析工作。
+     *
+     * <p>伺服器在背景逐章呼叫 AI，前端只需要輪詢進度。
+     * 這解決了逐章同步呼叫的兩個問題：
+     * Cloudflare 的 100 秒牆、以及閘道的每分鐘 30 次 rate limit。
+     *
+     * @param {object} opts {novelContent, chapterMaxChars, model, ...}
+     * @returns {Promise<{jobId: string, total: number}>}
+     */
+    async startAnalyzeJob(opts) {
+      const settings = await window.NovelTtsDB.settings.get();
+      const body = {
+        // 章節由前端切好再送進去 —— 續傳時「哪些章節要重跑」是前端決定的
+        chapters: (opts.chapters || []).map((c) => ({
+          index: c.index,
+          title: c.title || '',
+          content: c.content,
+        })),
+        model: opts.model || settings.analysisModel,
+        fallbackModelId: opts.fallbackModelId !== undefined
+          ? opts.fallbackModelId
+          : settings.fallbackAnalysisModel,
+        temperature: opts.temperature !== undefined ? opts.temperature : settings.temperature,
+        maxTokens: opts.maxTokens !== undefined ? opts.maxTokens : settings.maxTokens,
+      };
+      const response = await fetchWithTimeout('/jobs/analyze', {
+        method: 'POST',
+        headers: buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      }, 30_000);
+      if (!response.ok) {
+        throw new Error('無法開始分析：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 查詢背景工作的進度與結果。
+     *
+     * @param {string} jobId
+     * @returns {Promise<object>} {status, done, total, results, failures, message}
+     */
+    async jobStatus(jobId) {
+      const response = await fetchWithTimeout('/jobs/' + encodeURIComponent(jobId), {
+        method: 'GET',
+        headers: buildHeaders(),
+      }, 20_000);
+      if (!response.ok) {
+        throw new Error('查詢進度失敗：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 取消背景工作並清除其結果。
+     *
+     * @param {string} jobId
+     */
+    async cancelJob(jobId) {
+      const response = await fetchWithTimeout('/jobs/' + encodeURIComponent(jobId), {
+        method: 'DELETE',
+        headers: buildHeaders(),
+      }, 20_000);
+      if (!response.ok) {
+        throw new Error('取消失敗：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
      * 分析章節內容 → 段落與角色。
      *
      * @returns {Promise<{segments: Array}>}
