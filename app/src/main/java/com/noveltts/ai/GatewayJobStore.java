@@ -1,6 +1,7 @@
 package com.noveltts.ai;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,6 +91,36 @@ public class GatewayJobStore {
         private volatile long updatedAt = System.currentTimeMillis();
         /** 是否要求中止。 */
         private volatile boolean cancelRequested;
+        /** 工作類型：ANALYZE 或 SYNTHESIZE。 */
+        private volatile String type = "ANALYZE";
+        /**
+         * 語音合成的結果（序號 → 音檔）。
+         *
+         * <p>音檔比分析結果大得多（500 段約 30MB），不能像 JSON 那樣
+         * 整包塞進 snapshot。所以採「分段取回、取回即釋放」：
+         * 客戶端每輪帶著已存檔的序號（ack）來取，伺服器把 ack 之前的
+         * 音檔丟掉，避免記憶體無限累積。
+         */
+        private final Map<Integer, AudioEntry> audioResults =
+                java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
+        /** 客戶端已確認存檔的最大序號；小於等於此值的音檔會被釋放。 */
+        private volatile int ackCursor = -1;
+        /** 已取回（交給客戶端）的序號集合。 */
+        private final java.util.Set<Integer> takenSeqs =
+                java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+        /**
+         * 一段語音合成的結果。
+         *
+         * @param seq 序號
+         * @param segmentId 段落 id
+         * @param chapterId 章節 id
+         * @param voice 使用的音色
+         * @param mp3 MP3 位元組
+         */
+        public record AudioEntry(int seq, String segmentId, String chapterId,
+                                 String voice, byte[] mp3) {
+        }
 
         Job(String id, String apiKey, String baseUrl, int total) {
             this.id = id;
@@ -170,6 +201,100 @@ public class GatewayJobStore {
 
         public void requestCancel() {
             this.cancelRequested = true;
+        }
+
+        public String type() {
+            return type;
+        }
+
+        public void type(String t) {
+            this.type = t;
+        }
+
+        /** 放入一段合成好的音檔。 */
+        public void putAudio(AudioEntry entry) {
+            audioResults.put(entry.seq(), entry);
+            touch();
+        }
+
+        /**
+         * 取回尚未取走的音檔，並釋放 ack 之前的。
+         *
+         * <p><b>ack 必須是「連續已取回的最大前綴」，不能是已取回的最大值</b>。
+         * 合成是併行的，回來的順序不保險 —— 例如先回傳 seq 2 再回傳 seq 0。
+         * 若用最大值當 ack，seq 0 與 seq 1 會被誤判成「已取回」而遭釋放，
+         * 這兩段音檔就永遠拿不到了。
+         *
+         * <p>因此伺服器自己追蹤已取回的序號集合，只釋放那些「序號小於 ack
+         * 且確實已被取回」的項目。ack 只是客戶端提供的線索，伺服器會驗證。
+         *
+         * @param ack 客戶端已確認存檔的最大序號（線索）
+         * @param limit 本次最多取回幾段（避免單次回應過大）
+         * @return 待取回的音檔
+         */
+        public List<AudioEntry> takeAudioAfter(int ack, int limit) {
+            List<AudioEntry> out = new ArrayList<>();
+            synchronized (audioResults) {
+                for (Map.Entry<Integer, AudioEntry> e : audioResults.entrySet()) {
+                    // 只取「還沒被取走過」的項目
+                    if (takenSeqs.contains(e.getKey())) continue;
+                    out.add(e.getValue());
+                    if (out.size() >= limit) break;
+                }
+                // 標記為已交給客戶端，但先不刪除 ——
+                // 萬一網路失敗，前端可以再取一次（重試機制）
+                for (AudioEntry e : out) {
+                    takenSeqs.add(e.seq());
+                }
+            }
+            // 釋放：序號小於 ack 且已交給客戶端 → 客戶端肯定已經存好了
+            if (ack >= 0) {
+                synchronized (audioResults) {
+                    audioResults.keySet().removeIf(k -> k <= ack && takenSeqs.contains(k));
+                }
+            }
+            return out;
+        }
+
+        /**
+         * 讓已交給客戶端但尚未確認的音檔可以再取一次。
+         *
+         * <p>前端在網路失敗時呼叫，把「交出但沒存到」的序號退回來重送。
+         *
+         * @param seq 序號
+         */
+        public void requeue(long seq) {
+            takenSeqs.remove((int) seq);
+            touch();
+        }
+
+        /**
+         * 退回一批序號（前端存檔失敗時重試用）。
+         *
+         * @param seqs 序號清單
+         */
+        public void requeueAll(java.util.Collection<Long> seqs) {
+            if (seqs == null) return;
+            for (Long s : seqs) {
+                if (s != null) takenSeqs.remove(s.intValue());
+            }
+            touch();
+        }
+
+        /** 目前待取回的音檔數。 */
+        public int pendingAudioCount() {
+            return audioResults.size();
+        }
+
+        /** 尚未取走的音檔總位元組數（記憶體用量監控用）。 */
+        public long pendingAudioBytes() {
+            long total = 0;
+            synchronized (audioResults) {
+                for (AudioEntry e : audioResults.values()) {
+                    total += e.mp3() == null ? 0 : e.mp3().length;
+                }
+            }
+            return total;
         }
 
         /** 是否已過期。 */

@@ -661,6 +661,160 @@
   }
 
   /**
+   * 合成整本：所有待合成的段落一次交給背景工作處理。
+   *
+   * <p><b>為什麼要背景執行</b>
+   *
+   * <p>一本長篇小說有 500 段以上。前端逐段同步呼叫會撞上閘道的
+   * rate limit（每 IP 每分鐘 30 次），而且串行下來要一兩個小時。
+   * 交給伺服器背景處理可以<b>併行</b>合成（預設 3 路），
+   * 總時間縮短三倍，而且使用者關掉分頁再打開進度還在。
+   *
+   * <p><b>音檔怎麼回來</b>
+   *
+   * <p>音檔很大（500 段約 30MB），不能整包塞在進度回應裡。
+   * 採「分段取回、取回即釋放」：每輪帶著已存檔的序號來取，
+   * 伺服器把舊的音檔丟掉，記憶體用量因此維持在可控範圍。
+   *
+   * @param {object} novel
+   * @param {boolean} onlyPending 只合成尚未完成的段落
+   * @param {function} onProgress (pct, label)
+   */
+  async function synthesizeNovel(novel, onlyPending, onProgress) {
+    const settings = await DB.settings.get();
+    const group = await loadGroup(novel);
+    const chapters = novel.chapters || [];
+    if (!chapters.length) throw new Error('尚未分析，請先執行 AI 分析');
+
+    // 收集所有待合成的段落，並算出每段要用的音色與模型
+    const jobs = [];
+    const byId = new Map((novel.characters || []).map((c) => [c.id, c]));
+    for (const ch of chapters) {
+      for (const s of (ch.segments || [])) {
+        if (onlyPending && s.ttsStatus === 'DONE') continue;
+        const character = byId.get(s.characterId) || null;
+        const voice = resolveVoice(s, character, group, settings);
+        const instructions = resolveInstructions(s, character, group, settings);
+        s.voice = voice;
+        if (instructions) s.instructions = instructions;
+        // 音色必須搭配它所屬的模型 —— voice_id 是模型內的概念
+        const voiceModel = await modelOfVoice(voice);
+        jobs.push({
+          seq: jobs.length,
+          segmentId: s.id,
+          chapterId: ch.id,
+          voice: voice,
+          model: (typeof voiceModel === 'string' && voiceModel) ? voiceModel : '',
+          turns: [{ text: s.text || '', voice: voice, instructions: instructions || '' }],
+          segment: s,
+        });
+      }
+    }
+    if (!jobs.length) {
+      if (onProgress) onProgress(100, '所有段落都已合成');
+      return novel;
+    }
+
+    const job = await GW.startSynthesizeJob({
+      groups: jobs.map((j) => ({
+        seq: j.seq,
+        segmentIds: [j.segmentId],
+        chapterId: j.chapterId,
+        voice: j.voice,
+        model: j.model,
+        turns: j.turns,
+      })),
+    });
+
+    // 取回音檔。ack 是已確認存檔的最大序號 —— 伺服器據此釋放記憶體。
+    let ack = -1;
+    const received = new Set();
+    const total = jobs.length;
+    let saved = 0;
+
+    for (;;) {
+      const state = await GW.jobAudio(job.jobId, ack);
+      const items = state.items || [];
+
+      const failedSeqs = [];
+      for (const item of items) {
+        const j = jobs.find((x) => x.segmentId === item.segmentId);
+        if (!j) continue;
+        try {
+          const binary = atob(item.audioBase64 || '');
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'audio/mpeg' });
+          const durationMs = await DB.audio.durationMs(blob);
+          await DB.audio.save(novel.id, 'SEGMENT', item.segmentId, blob, {
+            chapterId: item.chapterId || '',
+            voice: item.voice || '',
+            fileName: item.segmentId + '.mp3',
+            durationMs: durationMs,
+          });
+          j.segment.ttsStatus = 'DONE';
+          received.add(item.seq);
+          saved++;
+        } catch (e) {
+          // 存檔失敗 → 退回讓伺服器重新交付
+          failedSeqs.push(item.seq);
+        }
+      }
+      if (failedSeqs.length) {
+        await GW.requeueAudio(job.jobId, failedSeqs);
+      }
+      // 失敗的段落也要標記為「已處理」，否則 ack 會卡在那個序號，
+      // 導致後面的音檔永遠無法被伺服器釋放。
+      for (const fl of (state.failures || [])) {
+        if (fl.index != null) received.add(fl.index);
+      }
+      // ack 必須是「連續已收到」的最大前綴，不能是最大值 ——
+      // 合成是併行的，回來順序不保險。若用最大值當 ack，
+      // 中間沒收到的序號會被伺服器誤判成已取回而遭釋放。
+      while (received.has(ack + 1)) ack++;
+
+      if (saved) {
+        await DB.novels.save(novel);
+        if (onProgress) {
+          onProgress(Math.round((saved / total) * 100),
+            (state.message || ('合成 ' + saved + '/' + total)));
+        }
+      } else if (onProgress) {
+        onProgress(Math.round((saved / total) * 100),
+          (state.message || ('合成中 ' + saved + '/' + total)));
+      }
+
+      if (state.status === 'SUCCESS' || state.status === 'PARTIAL'
+          || state.status === 'FAILED' || state.status === 'CANCELLED') {
+        // 還有沒取完的音檔（伺服器已經產生了但這輪沒帶回來）
+        if (items.length > 0) continue;
+        if (state.status === 'FAILED') {
+          throw new Error(state.message || '語音合成失敗');
+        }
+        break;
+      }
+      await window.sleep(1500);
+    }
+
+    // 標記章節狀態
+    for (const ch of chapters) {
+      const all = (ch.segments || []).every((s) => s.ttsStatus === 'DONE');
+      if (all) ch.status = 'READY';
+    }
+    await DB.novels.save(novel);
+
+    // 合併每章音檔
+    for (const ch of chapters) {
+      try {
+        await mergeChapterAudio(novel, ch);
+      } catch (e) {
+        console.warn('合併章節音檔失敗（第 ' + ch.index + ' 章）：', e);
+      }
+    }
+    return novel;
+  }
+
+  /**
    * 合併本章：把本章各段音檔合併成一個音檔。
    */
   async function mergeChapterAudio(novel, chapter) {
@@ -823,6 +977,7 @@
     chapterKey: chapterKey,
     synthesizeSegment: synthesizeSegment,
     synthesizeChapter: synthesizeChapter,
+    synthesizeNovel: synthesizeNovel,
     mergeChapterAudio: mergeChapterAudio,
     mergeNovelAudio: mergeNovelAudio,
     zipNovel: zipNovel,

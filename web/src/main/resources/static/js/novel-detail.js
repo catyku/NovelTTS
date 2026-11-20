@@ -191,7 +191,7 @@ function updateAnalyzeButton() {
   }
 }
 
-/* 觸發語音合成（整本） */
+/* 觸發語音合成（整本） —— 交給伺服器背景併行處理 */
 document.getElementById('synthesizeBtn').addEventListener('click', async () => {
   if (!requireApiKey()) return;
   if (!NOVEL) return;
@@ -200,15 +200,15 @@ document.getElementById('synthesizeBtn').addEventListener('click', async () => {
   try {
     const chapters = NOVEL.chapters || [];
     if (!chapters.length) throw new Error('尚未分析，請先執行 AI 分析');
-    for (let i = 0; i < chapters.length; i++) {
-      const ch = chapters[i];
-      setProgress(Math.round((i / chapters.length) * 100), '合成第 ' + (i + 1) + '/' + chapters.length + ' 章：' + (ch.title || ''));
-      await synthesizeChapter(NOVEL, ch, true);
-    }
+    await window.NovelTtsPipeline.synthesizeNovel(
+      NOVEL, true, (pct, label) => setProgress(pct, label));
     await reload();
-    setMessage('語音合成完成，共 ' + chapters.length + ' 章', true);
+    const done = (NOVEL.chapters || []).reduce((n, c) => n + (c.segments || []).length, 0);
+    setMessage('語音合成完成，共 ' + done + ' 段 / ' + chapters.length + ' 章', true);
   } catch (e) {
-    setMessage('語音合成失敗: ' + e.message, false);
+    setMessage('語音合成失敗: ' + e.message
+      + '（已完成的段落都保留，再按一次「觸發語音合成」會從中斷處繼續）', false);
+    await reload();
   } finally {
     btn.disabled = false;
   }

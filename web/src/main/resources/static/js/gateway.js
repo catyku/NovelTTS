@@ -159,6 +159,92 @@
     },
 
     /**
+     * 開始背景語音合成工作。
+     *
+     * <p>伺服器在背景併行合成各段（預設 3 路），前端輪詢取回音檔。
+     * 一本長篇小說有 500 段以上，前端逐段同步呼叫會撞上 rate limit，
+     * 而且要跑一兩個小時。
+     *
+     * @param {object} opts {groups, model, globalInstructions}
+     * @returns {Promise<{jobId: string, total: number}>}
+     */
+    async startSynthesizeJob(opts) {
+      const settings = await window.NovelTtsDB.settings.get();
+      const body = {
+        groups: (opts.groups || []).map((g) => ({
+          seq: g.seq,
+          segmentIds: g.segmentIds || [],
+          chapterId: g.chapterId || '',
+          voice: g.voice || '',
+          model: g.model || '',
+          turns: (g.turns || []).map((t) => ({
+            text: t.text,
+            voice: t.voice,
+            instructions: t.instructions || '',
+          })),
+        })),
+        model: opts.model || settings.ttsModel,
+        fallbackModelId: opts.fallbackModelId !== undefined
+          ? opts.fallbackModelId
+          : settings.fallbackTtsModel,
+        globalInstructions: opts.globalInstructions !== undefined
+          ? opts.globalInstructions
+          : settings.globalInstructions,
+      };
+      const response = await fetchWithTimeout('/jobs/synthesize', {
+        method: 'POST',
+        headers: buildHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      }, 60_000);
+      if (!response.ok) {
+        throw new Error('無法開始合成：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 取回語音合成的結果。
+     *
+     * <p>音檔很大（500 段約 30MB），所以採「分段取回、取回即釋放」：
+     * 每輪帶著已存檔的序號（ack）來取，伺服器把 ack 之前的丟掉。
+     *
+     * @param {string} jobId
+     * @param {number} ack 已確認存檔的最大序號
+     * @returns {Promise<object>} {status, done, total, items: [{seq, segmentId, chapterId, voice, audioBase64}]}
+     */
+    async jobAudio(jobId, ack) {
+      const response = await fetchWithTimeout(
+        '/jobs/' + encodeURIComponent(jobId) + '/audio?ack=' + ack + '&limit=10',
+        { method: 'GET', headers: buildHeaders() },
+        60_000);
+      if (!response.ok) {
+        throw new Error('取回音檔失敗：' + (await readError(response)));
+      }
+      return response.json();
+    },
+
+    /**
+     * 退回音檔，讓伺服器重新交付。
+     *
+     * <p>音檔交給前端後不會立刻從伺服器刪除 —— 存檔失敗時可以退回來重送。
+     *
+     * @param {string} jobId
+     * @param {Array<number>} seqs 要退回的序號
+     */
+    async requeueAudio(jobId, seqs) {
+      if (!seqs || !seqs.length) return;
+      const response = await fetchWithTimeout(
+        '/jobs/' + encodeURIComponent(jobId) + '/audio/requeue', {
+          method: 'POST',
+          headers: buildHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ seqs: seqs }),
+        }, 20_000);
+      if (!response.ok) {
+        console.warn('退回音檔失敗：', await readError(response));
+      }
+    },
+
+    /**
      * 查詢背景工作的進度與結果。
      *
      * @param {string} jobId
