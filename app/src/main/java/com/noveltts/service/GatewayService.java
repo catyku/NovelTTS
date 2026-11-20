@@ -38,7 +38,18 @@ public class GatewayService {
     private static final Logger log = LoggerFactory.getLogger(GatewayService.class);
 
     /** 分析呼叫的重試嘗試次數（含首次呼叫）。 */
-    private static final int MAX_CHAT_ATTEMPTS = 3;
+    /**
+     * AI 呼叫的最大嘗試次數。
+     *
+     * <p>必須配合 OpenRouterClient 的讀取逾時，總時間要小於 Cloudflare 的
+     * 100 秒上限 —— 超過就會回 524，使用者看到的是一整頁 HTML 而不是
+     * 可用的錯誤訊息。
+     *
+     * <p>逾時的處理刻意不在伺服器端重試：伺服器逾時後快速回應，
+     * 由前端顯示「繼續 AI 分析」讓使用者重試那一章。這樣比在伺服器端
+     * 連續重試更快回應使用者，也不會讓整個請求拖過 Cloudflare 的上限。
+     */
+    private static final int MAX_CHAT_ATTEMPTS = 2;
 
     /** 重試退避基準（毫秒），第 n 次等待 base * 2^n。 */
     private static final long RETRY_BACKOFF_BASE_MS = 1000L;

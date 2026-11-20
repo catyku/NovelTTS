@@ -48,6 +48,36 @@ class GatewayExceptionHandlerTest {
     }
 
     @Test
+    void 上游逾時回504() {
+        // Cloudflare 的代理逾時是 100 秒 —— 伺服器必須在這之前自己回應，
+        // 否則使用者看到的是一整頁 524 HTML。
+        ResponseEntity<Map<String, Object>> resp = handler.onResourceAccess(
+                new ResourceAccessException("timeout", new java.net.http.HttpTimeoutException("timeout")));
+
+        assertEquals(HttpStatus.GATEWAY_TIMEOUT, resp.getStatusCode());
+        assertEquals("upstream_timeout", resp.getBody().get("error"));
+    }
+
+    @Test
+    void AI呼叫失敗保留上游狀態碼() {
+        // AiCallException 沒有專屬 handler 的話，401/429 會全部變成 500。
+        ResponseEntity<Map<String, Object>> resp = handler.onAiCall(
+                new com.noveltts.ai.AiCallException(401, "OpenRouter 呼叫失敗 (HTTP 401): invalid key"));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, resp.getStatusCode());
+        assertEquals("upstream_client_error", resp.getBody().get("error"));
+    }
+
+    @Test
+    void AI呼叫逾時回504() {
+        ResponseEntity<Map<String, Object>> resp = handler.onAiCall(
+                new com.noveltts.ai.AiCallException(0, "AI 回應逾時"));
+
+        assertEquals(HttpStatus.GATEWAY_TIMEOUT, resp.getStatusCode());
+        assertEquals("upstream_timeout", resp.getBody().get("error"));
+    }
+
+    @Test
     void 上游5xx轉成502() {
         HttpServerErrorException e = HttpServerErrorException.create(
                 HttpStatus.INTERNAL_SERVER_ERROR, "Server Error", HttpHeaders.EMPTY,
@@ -62,7 +92,7 @@ class GatewayExceptionHandlerTest {
     @Test
     void 連線不上上游回502() {
         ResponseEntity<Map<String, Object>> resp = handler.onResourceAccess(
-                new ResourceAccessException("timeout"));
+                new ResourceAccessException("Connection refused"));
 
         assertEquals(HttpStatus.BAD_GATEWAY, resp.getStatusCode());
         assertEquals("upstream_unreachable", resp.getBody().get("error"));

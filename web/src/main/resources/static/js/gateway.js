@@ -59,11 +59,68 @@
       }
       return reason || text;
     } catch (e) {
-      return text || `HTTP ${response.status}`;
+      // 不是 JSON —— 多半是反向代理（Cloudflare）回傳的錯誤頁。
+      // 直接把整頁 HTML 丟給使用者等於沒有訊息，要翻譯成人話。
+      return describeProxyError(response.status, text);
+    }
+  }
+
+  /**
+   * 把反向代理的錯誤頁翻譯成人話。
+   *
+   * <p>Cloudflare 524 = origin 100 秒沒回應；502/503 = origin 掛掉或重啟。
+   * 這些都不是應用程式的問題，直接顯示 HTML 對使用者毫無意義。
+   */
+  function describeProxyError(status, text) {
+    const isHtml = /<!DOCTYPE html|<html/i.test(text || '');
+    if (status === 524) {
+      return '伺服器處理超過 100 秒仍未回應（Cloudflare 524）。'
+        + '通常是這一章太長或 AI 服務忙碌 —— 已經完成的章節都保留，'
+        + '請按「繼續 AI 分析」重試這一章。';
+    }
+    if (status === 502 || status === 503) {
+      return '伺服器暫時無法回應（HTTP ' + status + '），可能正在重啟。請稍後再試，'
+        + '已完成的章節都保留。';
+    }
+    if (status === 504) {
+      return 'AI 服務回應逾時（HTTP 504），可能是這一章太長或服務忙碌。'
+        + '已完成的章節都保留，請按「繼續 AI 分析」重試這一章。';
+    }
+    if (isHtml) {
+      return '伺服器回應格式異常（HTTP ' + status + '）。請稍後再試。';
+    }
+    return (text || ('HTTP ' + status)).slice(0, 500);
+  }
+
+  /** 單次 AI 請求的前端逾時（毫秒）。比伺服器端長一點，讓伺服器先回錯誤。 */
+  const REQUEST_TIMEOUT_MS = 90_000;
+
+  /**
+   * 帶逾時的 fetch。
+   *
+   * <p>沒有逾時的話，網路半斷的連線會讓請求一直掛著，
+   * 使用者只會看到畫面卡住、沒有任何提示。
+   */
+  async function fetchWithTimeout(path, init, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs || REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url(path), Object.assign({}, init, { signal: controller.signal }));
+    } catch (e) {
+      if (e && e.name === 'AbortError') {
+        throw new Error('請求逾時（超過 ' + Math.round((timeoutMs || REQUEST_TIMEOUT_MS) / 1000)
+          + ' 秒）。請檢查網路後再試 —— 已完成的章節都保留。');
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
   const gateway = {
+    /** 供測試：把代理的錯誤頁翻譯成人話。 */
+    describeProxyError: describeProxyError,
+
     /**
      * 分析章節內容 → 段落與角色。
      *
@@ -82,7 +139,7 @@
         maxTokens: opts.maxTokens !== undefined ? opts.maxTokens : settings.maxTokens,
         extraParams: opts.extraParams || {},
       };
-      const response = await fetch(url('/analyze'), {
+      const response = await fetchWithTimeout('/analyze', {
         method: 'POST',
         headers: buildHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
@@ -111,11 +168,12 @@
           ? opts.globalInstructions
           : settings.globalInstructions,
       };
-      const response = await fetch(url('/synthesize'), {
+      // TTS 合成比較久，給 100 秒（雲端代理的上限）再多一點也沒意義
+      const response = await fetchWithTimeout('/synthesize', {
         method: 'POST',
         headers: buildHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
-      });
+      }, 100_000);
       if (!response.ok) {
         throw new Error('語音合成失敗：' + (await readError(response)));
       }
@@ -142,7 +200,7 @@
         temperature: opts.temperature !== undefined ? opts.temperature : 0.8,
         extraParams: opts.extraParams || {},
       };
-      const response = await fetch(url('/generate-outline'), {
+      const response = await fetchWithTimeout('/generate-outline', {
         method: 'POST',
         headers: buildHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
@@ -181,7 +239,7 @@
         // 傳全域設定的 maxTokens（預設 8000）會讓章節長度失控。
         extraParams: opts.extraParams || {},
       };
-      const response = await fetch(url('/generate-chapter'), {
+      const response = await fetchWithTimeout('/generate-chapter', {
         method: 'POST',
         headers: buildHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),

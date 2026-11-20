@@ -25,6 +25,11 @@ public class AiCallException extends RuntimeException {
 
     /** 是否值得重試。 */
     public boolean isRetryable() {
+        // 只重試明確的暫時性錯誤。
+        //
+        // 傳輸層失敗（statusCode 0，含讀取逾時）刻意不重試 ——
+        // 伺服器端逾時就快速回應，讓使用者按「繼續 AI 分析」重試那一章。
+        // 在伺服器端重試會讓整個請求拖過 Cloudflare 的 100 秒上限而變成 524。
         return statusCode == 429 || statusCode >= 500;
     }
 }

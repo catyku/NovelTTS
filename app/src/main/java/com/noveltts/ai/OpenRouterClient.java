@@ -89,7 +89,9 @@ public class OpenRouterClient {
      * 無狀態閘道版語音合成：回傳 raw PCM 位元組。
      */
     public SpeechResult speech(GatewayProvider config, TtsRequest request) {
-        RestClient client = buildClient(config);
+        // TTS 合成比分析慢（要真的把文字唸出來），
+        // 但仍要留一點餘裕給 Cloudflare 的 100 秒上限。
+        RestClient client = buildClient(config, TTS_READ_TIMEOUT_MS);
         ResponseEntity<byte[]> response = client.post()
                 .uri("/audio/speech")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -257,8 +259,28 @@ public class OpenRouterClient {
                     "OpenRouter 呼叫失敗 (HTTP " + e.getStatusCode().value() + "): "
                             + (detail == null || detail.isBlank() ? e.getMessage() : detail), e);
         } catch (RestClientException e) {
-            throw new AiCallException(0, "OpenRouter 呼叫失敗: " + e.getMessage(), e);
+            throw new AiCallException(0, describeTransportFailure(e), e);
         }
+    }
+
+    /**
+     * 把傳輸層的例外轉成人看得懂的訊息。
+     *
+     * <p>逾時是最常見的一種 —— 使用者會看到 Cloudflare 的 524 HTML 頁面，
+     * 那對他們毫無意義。要明確說出來是「AI 回應逾時」。
+     */
+    private String describeTransportFailure(RestClientException e) {
+        Throwable cause = e.getCause();
+        String message = String.valueOf(e.getMessage());
+        if (cause instanceof java.net.http.HttpTimeoutException
+                || message.contains("timeout") || message.contains("timed out")) {
+            return "AI 回應逾時（超過 " + (READ_TIMEOUT_MS / 1000) + " 秒），"
+                    + "可能是章節太長或上游忙碌。請再試一次。";
+        }
+        if (cause instanceof java.net.ConnectException) {
+            return "無法連線到 AI 服務（連線被拒絕），請檢查網路或稍後再試。";
+        }
+        return "OpenRouter 呼叫失敗: " + message;
     }
 
     private Map<String, Object> exchange(AiProviderConfig config, String path,
@@ -372,12 +394,44 @@ public class OpenRouterClient {
         return null;
     }
 
+    /**
+     * 連線與讀取逾時（毫秒）。
+     *
+     * <p>Cloudflare 的代理逾時是 100 秒 —— 超過就會回 524，
+     * 使用者看到的是一整頁 HTML 而不是錯誤訊息。伺服器端必須在
+     * 這之前先放棄，才能回應一個有意義的錯誤。
+     *
+     * <p>沒有逾時的話，OpenRouter 偶發性掛住會讓請求永久佔著執行緒，
+     * Tomcat 的 thread pool 會被慢慢耗乾。
+     */
+    private static final long CONNECT_TIMEOUT_MS = 15_000;
+
+    /**
+     * 單次請求的讀取逾時。
+     *
+     * <p>必須小於 Cloudflare 的 100 秒代理逾時 —— 超過就會回 524，
+     * 使用者看到的是一整頁 HTML。逾時發生時伺服器會自己回應
+     * 「AI 回應逾時」，前端則提示可以續傳。
+     *
+     * <p>55 秒是實測值：3000 字的章節分析通常 10～25 秒，
+     * 55 秒留了足夠餘裕又不會撞到 Cloudflare 的牆。
+     */
+    private static final long READ_TIMEOUT_MS = 55_000;
+
+    /** TTS 呼叫的讀取逾時 —— 合成音檔比分析慢，但仍在 Cloudflare 上限內。 */
+    private static final long TTS_READ_TIMEOUT_MS = 85_000;
+
     private RestClient buildClient(GatewayProvider config) {
+        return buildClient(config, READ_TIMEOUT_MS);
+    }
+
+    private RestClient buildClient(GatewayProvider config, long readTimeoutMs) {
         RestClient.Builder b = builder.clone().baseUrl(config.baseUrl());
         b.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + (config.apiKey() == null ? "" : config.apiKey()));
         for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
             b.defaultHeader(e.getKey(), e.getValue());
         }
+        b.requestFactory(createRequestFactory(readTimeoutMs));
         return b.build();
     }
 
@@ -387,6 +441,23 @@ public class OpenRouterClient {
         for (Map.Entry<String, String> e : config.getExtraHeaders().entrySet()) {
             b.defaultHeader(e.getKey(), e.getValue());
         }
+        b.requestFactory(createRequestFactory(READ_TIMEOUT_MS));
         return b.build();
+    }
+
+    /**
+     * 建立帶逾時的 request factory。
+     *
+     * <p>JDK 21+ 的 HttpClient 沒有 fluent 的 timeout setter，
+     * 要用 connectTimeout + request 的 timeout 一起設定。
+     */
+    private org.springframework.http.client.ClientHttpRequestFactory createRequestFactory(long readTimeoutMs) {
+        java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofMillis(CONNECT_TIMEOUT_MS))
+                .build();
+        org.springframework.http.client.JdkClientHttpRequestFactory factory =
+                new org.springframework.http.client.JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(java.time.Duration.ofMillis(readTimeoutMs));
+        return factory;
     }
 }

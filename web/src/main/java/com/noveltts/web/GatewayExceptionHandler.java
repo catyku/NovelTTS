@@ -55,12 +55,62 @@ public class GatewayExceptionHandler {
                         "detail", safeDetail(e)));
     }
 
-    /** 連線不到上游（逾時、DNS 失敗）。 */
+    /**
+     * 連線不到上游（逾時、DNS 失敗）。
+     *
+     * <p>逾時要跟「連不上」分開講：逾時通常代表這一章太長或上游忙碌，
+     * 重試就有機會成功；連不上則是網路或設定問題。
+     */
     @ExceptionHandler(ResourceAccessException.class)
     public ResponseEntity<Map<String, Object>> onResourceAccess(ResourceAccessException e) {
         log.error("閘道無法連線上游：{}", e.getMessage());
+        Throwable cause = e.getCause();
+        boolean timeout = cause instanceof java.net.http.HttpTimeoutException
+                || cause instanceof java.net.SocketTimeoutException
+                || String.valueOf(e.getMessage()).toLowerCase().contains("timeout");
+        if (timeout) {
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                    .body(Map.of("error", "upstream_timeout",
+                            "detail", "AI 服務回應逾時，可能是這一章太長或服務忙碌。"
+                                    + "已完成的章節都保留，請按「繼續 AI 分析」重試這一章。"));
+        }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of("error", "upstream_unreachable", "detail", "無法連線到上游服務"));
+    }
+
+    /**
+     * AI 呼叫失敗（已包裝成 AiCallException）。
+     *
+     * <p>沒有這個 handler 的話，AI 的 401（Key 無效）、400（參數錯誤）
+     * 都會落到全域的 500「伺服器錯誤」，使用者完全看不出哪裡出了問題。
+     *
+     * <p>statusCode 0 代表傳輸層失敗（逾時、連不上）。
+     */
+    @ExceptionHandler(com.noveltts.ai.AiCallException.class)
+    public ResponseEntity<Map<String, Object>> onAiCall(com.noveltts.ai.AiCallException e) {
+        int status = e.getStatusCode();
+        log.error("閘道 AI 呼叫失敗 (status {})：{}", status, e.getMessage());
+        if (status == 0) {
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                    .body(Map.of("error", "upstream_timeout",
+                            "detail", "AI 服務回應逾時或無法連線。已完成的章節都保留，"
+                                    + "請按「繼續 AI 分析」重試這一章。"));
+        }
+        if (status == 401 || status == 403) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "upstream_client_error",
+                            "detail", "OpenRouter 拒绝了請求（HTTP " + status + "），"
+                                    + "請確認 API Key 正確且仍有額度。"));
+        }
+        if (status == 429) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of("error", "upstream_rate_limited",
+                            "detail", "OpenRouter 流量限制（HTTP 429），請稍後再試。"
+                                    + "已完成的章節都保留。"));
+        }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(Map.of("error", "upstream_client_error",
+                        "detail", "OpenRouter 呼叫失敗（HTTP " + status + "）：" + e.getMessage()));
     }
 
     /** 其他 RestClient 錯誤。 */
